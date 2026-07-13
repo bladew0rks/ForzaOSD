@@ -36,6 +36,4 @@ for the original HUD projects represented here.
 
 ## License
 
-ForzaOSD's own code is GPL-3.0-or-later. Bundled third-party HUD assets remain the
-work of their respective creators and are identified in `credits.txt`; the GPL does
-not relicense them.
+ForzaOSD is GPL-3.0-or-later. HUD assets remain the property of their respective creators.

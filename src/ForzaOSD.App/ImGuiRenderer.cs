@@ -59,14 +59,13 @@ namespace ForzaOSD.App
             deviceContext.AddRef();
 
             var io = ImGui.GetIO();
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset; // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
 
             CreateDeviceObjects();
         }
 
         public void Render(ImDrawDataPtr data)
         {
-            // Avoid rendering when minimized
             if (data.DisplaySize.X <= 0.0f || data.DisplaySize.Y <= 0.0f)
                 return;
 
@@ -99,7 +98,6 @@ namespace ForzaOSD.App
                 indexBuffer = device.CreateBuffer(desc);
             }
 
-            // Upload vertex/index data into a single contiguous GPU buffer
             var vertexResource = ctx.Map(
                 vertexBuffer,
                 0,
@@ -140,9 +138,6 @@ namespace ForzaOSD.App
             ctx.Unmap(vertexBuffer, 0);
             ctx.Unmap(indexBuffer, 0);
 
-            // Setup orthographic projection matrix into our constant buffer
-            // Our visible imgui space lies from draw_data.DisplayPos (top left) to draw_data.DisplayPos+data_data.DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
-
             var constResource = ctx.Map(
                 constantBuffer,
                 0,
@@ -178,8 +173,6 @@ namespace ForzaOSD.App
 
             SetupRenderState(data, ctx);
 
-            // Render command lists
-            // (Because we merged all buffers into a single one, we maintain our own offset into them)
             int global_idx_offset = 0;
             int global_vtx_offset = 0;
             Vector2 clip_off = data.DisplayPos;

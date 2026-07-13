@@ -283,9 +283,7 @@ local function render(ctx)
   local draw, tm, settings = ctx.draw, ctx.telemetry, ctx.settings
   local alpha = ctx.opacity
   local cx = 630
-  -- Match the source GT7HUD's limiter compensation. Forza's current RPM
-  -- bounces below EngineMaxRpm at the limiter, so an unbiased ratio never
-  -- reaches the final rev frames on many cars.
+  -- The limiter can bounce below EngineMaxRpm, so leave enough headroom to reach the final frame.
   local limiter_bias = 1.05
   local rpm_ratio = clamp(tm.rpm * limiter_bias / math.max(1, tm.max_rpm), 0, 1)
 

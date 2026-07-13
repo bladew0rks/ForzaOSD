@@ -13,14 +13,11 @@ local function render(ctx)
   local at_redline = rpm_ratio >= 0.85
 
   if at_redline then
-    -- CSS equivalent of the outer 10 px red box-shadow.
     draw.rect { x = 54, y = 99, w = 102, h = 82, color = "#ff0000", alpha = 0.05 * alpha, rounding = 14 }
     draw.rect { x = 57, y = 102, w = 96, h = 76, color = "#ff0000", alpha = 0.1 * alpha, rounding = 11 }
     draw.rect { x = 60, y = 105, w = 90, h = 70, color = "#ff0808", alpha = 0.2 * alpha, rounding = 8 }
   end
 
-  -- Original .GDT_inset-display CSS: a black 50% -> 25% -> 50%
-  -- horizontal gradient, bright lower bevel, and dark inset shadow.
   draw.gradient {
     x = 65, y = 110, w = 80, h = 60,
     color = "#00000080", color2 = "#00000040", color3 = "#00000080",
@@ -29,7 +26,6 @@ local function render(ctx)
   draw.outline { x = 65, y = 110, w = 80, h = 60, color = "#000000", alpha = 0.8 * alpha, rounding = 5, thickness = 1 }
   draw.outline { x = 67, y = 112, w = 76, h = 56, color = "#000000", alpha = 0.22 * alpha, rounding = 3, thickness = 3 }
   if at_redline then
-    -- The original combines a deep red inset bloom with a thin amber-hot edge.
     draw.outline { x = 68, y = 113, w = 74, h = 54, color = "#ff0808", alpha = 0.42 * alpha, rounding = 2, thickness = 10 }
     draw.outline { x = 66, y = 111, w = 78, h = 58, color = "#ffd438", alpha = 0.9 * alpha, rounding = 4, thickness = 3 }
   else
@@ -67,7 +63,6 @@ local function render(ctx)
       end
       local cx = 174 + i * 20
       if active then
-        -- Layered falloff recreates the 10 px CSS bloom without a blur shader.
         draw.circle { cx = cx, cy = 127, radius = 17, color = glow, alpha = 0.04 * alpha }
         draw.circle { cx = cx, cy = 127, radius = 14, color = glow, alpha = 0.09 * alpha }
         draw.circle { cx = cx, cy = 127, radius = 11, color = glow, alpha = 0.2 * alpha }

@@ -31,11 +31,7 @@ local function clamp(value, minimum, maximum)
   return math.max(minimum, math.min(maximum, value))
 end
 
--- FM4UI ships dial faces with different scales and redline markings. The
--- original AC app chooses one from the car's static maximum RPM and then uses
--- a matching frame rate for its 270-frame sweep animation. Forza provides the
--- same maximum directly in every Data Out packet, so no car database or
--- learned peak is needed here.
+-- Each dial face has its own scale and animation rate.
 local rpm_bands = {
   { minimum = 17000, face = "rpm_16500", frame_rate = 0.01285 },
   { minimum = 15000, face = "rpm_14200", frame_rate = 0.01485 },
@@ -46,8 +42,7 @@ local rpm_bands = {
   { minimum = 8000, face = "rpm_8000", frame_rate = 0.02690 },
   { minimum = 7000, face = "rpm_6400", frame_rate = 0.03390 },
   { minimum = 6000, face = "rpm_6200", frame_rate = 0.03875 },
-  -- The upstream script says 0.39875 here, which exceeds frame 269 before
-  -- 700 RPM. It is an evident decimal-place typo; 0.039875 matches this dial.
+  -- The upstream 0.39875 value is a decimal-place typo.
   { minimum = 5000, face = "rpm_4600", frame_rate = 0.039875 },
   { minimum = 3500, face = "rpm_3300", frame_rate = 0.05350 },
 }
