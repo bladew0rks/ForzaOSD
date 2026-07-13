@@ -1,0 +1,31 @@
+ForzaOSD credits
+================
+
+Third-party HUD references and assets
+-------------------------------------
+
+NFS 2015 HUD 2.1 - StoRMiX43
+https://www.overtake.gg/downloads/pdash-nfs-2015-hud.24190/
+
+GT7 HUD - Inori GC
+https://www.overtake.gg/downloads/gt7-hud.56420/
+
+NFS Shift HUD - GhostInTheLeague
+https://www.beamng.com/threads/shift-style-digital-tacho.87833/
+
+Forza Motorsport 4 HUD - StoRMiX43
+https://www.overtake.gg/downloads/forza-motorsport-4-hud.55576/
+
+Wangan Midnight PS3 HUD - StoRMiX43
+https://www.overtake.gg/downloads/wangan-midnight-ps3-hud.72258/
+
+Fonts
+-----
+
+DSEG fonts - keshikan
+Licensed under the SIL Open Font License 1.1. The complete license is included
+beside the font files in the VFD profile directories.
+
+ForzaOSD's GPL-3.0-or-later license applies to ForzaOSD's own code. The names and
+links above are credits, not a relicensing of third-party artwork or code; those
+materials remain subject to their respective owners' terms.

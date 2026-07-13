@@ -1,0 +1,25 @@
+{
+  "version": 8,
+  "bind_address": "127.0.0.1",
+  "udp_port": 5300,
+  "window_title": "Forza Horizon 6",
+  "hotkey_vk": 27,
+  "hotkey_modifiers": 4,
+  "metric": true,
+  "show_only_when_foreground": true,
+  "capture_unknown_packets": false,
+  "hud_profile": "forzaosd.vfd",
+  "hud_modules": [],
+  "layout": { "x": 0.5, "y": 0.82, "scale": 1.0, "opacity": 0.92 },
+  "theme": { "accent": [0.1, 0.78, 1.0, 1.0], "redline_ratio": 0.9 },
+  "widgets": { "speed": true, "rpm": true, "gear": true, "pedals": true },
+  "audio": {
+    "enabled": true,
+    "capture_mode": "output",
+    "output_device_id": "",
+    "application_name": "",
+    "media_controls_enabled": true,
+    "gamepad_index": -1
+  },
+  "profile_settings": {}
+}

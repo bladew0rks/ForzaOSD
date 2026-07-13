@@ -1,0 +1,29 @@
+* text=auto
+
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.props text eol=lf
+*.slnx text eol=lf
+*.json text eol=lf
+*.manifest text eol=lf
+*.lua text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.ps1 text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+LICENSE text eol=lf
+
+# Imported HUD source bundles are reference material and assets. Preserve their
+# original bytes instead of normalizing or whitespace-checking them.
+hud_profiles/*/assets/** -text -diff
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ttf binary
+*.ico binary
+*.exe binary
+*.dll binary

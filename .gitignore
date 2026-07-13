@@ -1,0 +1,38 @@
+# IDE and editor state
+/.vs/
+/.vscode/
+/.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET and test output
+**/bin/
+**/obj/
+/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local SDKs, tools, and legacy build trees
+/.dotnet/
+/.tools/
+/build/
+/build-*/
+
+# Generated packages and staging output
+/artifacts/
+/dist/
+/captures/
+*.zip
+
+# Local runtime state
+/config.json
+*.log
+*.dmp
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

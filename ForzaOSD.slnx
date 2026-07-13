@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/ForzaOSD.Core/ForzaOSD.Core.csproj" />
+  <Project Path="src/ForzaOSD.App/ForzaOSD.App.csproj" />
+  <Project Path="src/ForzaOSD.Tests/ForzaOSD.Tests.csproj" />
+</Solution>

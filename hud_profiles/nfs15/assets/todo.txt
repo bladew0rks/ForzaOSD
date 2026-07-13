@@ -1,0 +1,15 @@
+[MODULES]
+tyres pressure
+tyres dirt
+position
+time from front car
+time from car behind
+session time left
+number of laps remaining
+blinking led for reserve
+analog fuel indicator
+
+[APP]
+disable refresh with dash switched off
+
+
