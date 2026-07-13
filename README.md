@@ -4,25 +4,27 @@
 
 # ForzaOSD
 
-ForzaOSD is an external HUD overlay for Forza Horizon 6. It reads Forza's telemetry stream over UDP and draws a transparent, click-through overlay on top of the game. No injection, no hooking, no memory reading.
+ForzaOSD is an external HUD overlay for Forza Horizon 6. It reads the game's telemetry stream over UDP and draws a transparent, click-through window over the game. It does not inject code, hook functions, or read game memory.
 
-Every HUD is a Lua profile. Each one owns its own layout, assets, and settings, so nothing bleeds into the next. The app ships with a handful of recreations of well-known racing HUDs, and there's a separate VFD radio module that runs alongside any speedometer and shows the audio spectrum plus whatever's playing. Profiles hot-reload while you work on them: save the file, glance at the overlay, keep going.
+HUDs are Lua profiles. Each profile defines its layout, assets, fonts, and settings. The app includes several recreations of existing racing HUDs and a separate VFD radio module that displays an audio spectrum and track metadata. Profiles reload when their files change.
 
-## What it does
+## How it works
 
-ForzaOSD only listens to Forza's telemetry UDP packets. It never touches the game process itself.
+ForzaOSD listens for Forza telemetry packets on UDP port `5300` by default.
 
-Layout, assets, fonts, and settings all live in the profile script, so tweaking a gauge doesn't mean recompiling anything. Edits get picked up automatically, and there's a diagnostics view if a reload goes wrong, so one bad save doesn't wreck the overlay you're relying on mid-race. A `hud` profile is the main speedometer; you can stack any number of `module` profiles on top of it, like the VFD radio. And the release build bundles its own runtime, so whoever's using it doesn't need .NET installed on their machine.
+A `hud` profile provides the main speedometer. Any number of `module` profiles can run with it, including the VFD radio. Profile files contain the layout and configuration, so HUD changes do not require recompiling the application.
+
+When a profile fails to reload, the diagnostics view reports the error and the current overlay keeps running. Release builds include the required runtime and do not require a separate .NET installation.
 
 ## Getting started
 
-1. Extract the release folder and run `forzaosd.exe`.
-2. In Forza, enable **Data Out**, set the IP to `127.0.0.1`, and the port to `5300`.
-3. Press **Shift+Esc** to pick a HUD, position it, and save your settings.
+1. Extract the release archive and run `forzaosd.exe`.
+2. In Forza, enable **Data Out** and set the address to `127.0.0.1` and the port to `5300`.
+3. Press **Shift+Esc** to select and position a HUD, then save the settings.
 
 ## Building
 
-You'll need Windows 10/11 and the .NET 10 SDK. If a repository-local SDK is present, it's used automatically.
+Building requires Windows 10 or 11 and the .NET 10 SDK. A repository-local SDK is used when present.
 
 ```powershell
 .\.dotnet\dotnet build ForzaOSD.slnx -c Release
@@ -30,9 +32,9 @@ You'll need Windows 10/11 and the .NET 10 SDK. If a repository-local SDK is pres
 .\build.ps1
 ```
 
-`build.ps1` produces a self-contained Windows x64 ZIP in `dist`. Nobody downloading it needs .NET installed.
+`build.ps1` writes a self-contained Windows x64 ZIP to `dist`.
 
-See [Lua.md](Lua.md) for the full HUD profile API, and [credits.txt](credits.txt) for the original HUD projects this one draws from.
+See [Lua.md](Lua.md) for the HUD profile API and [credits.txt](credits.txt) for the projects whose HUD designs and assets were referenced.
 
 ## License
 
