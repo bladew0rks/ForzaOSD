@@ -134,6 +134,37 @@ internal sealed unsafe class HudRuntime : IDisposable
                 profile.Assets[key] = path;
             }
         );
+        var declaredShaders = new List<(string Key, string Path, byte[] Bytecode)>();
+        try
+        {
+            ReadStringMap(
+                lua,
+                -1,
+                "shaders",
+                (key, value) =>
+                {
+                    if (string.IsNullOrWhiteSpace(key))
+                        throw new InvalidDataException("Shader key cannot be empty");
+                    var path = CustomShaderCompiler.ResolveProfilePath(profileRoot, value);
+                    try
+                    {
+                        declaredShaders.Add(
+                            (key, path, CustomShaderCompiler.CompileFile(path))
+                        );
+                    }
+                    catch (Exception e)
+                    {
+                        e.Data["ForzaOSD.ShaderPath"] = path;
+                        throw;
+                    }
+                }
+            );
+        }
+        catch
+        {
+            profile.Dispose();
+            throw;
+        }
         lua.GetField(-1, "fonts");
         if (lua.IsTable(-1))
         {
@@ -197,29 +228,29 @@ internal sealed unsafe class HudRuntime : IDisposable
         }
         lua.Pop(1);
         profile.Settings.Sort((a, b) => a.Order.CompareTo(b.Order));
-        ReadStringMap(
-            lua,
-            -1,
-            "shaders",
-            (key, value) =>
+        try
+        {
+            foreach (var shader in declaredShaders)
             {
-                if (string.IsNullOrWhiteSpace(key))
-                    throw new InvalidDataException("Shader key cannot be empty");
-                var path = Path.GetFullPath(Path.Combine(profileRoot, value));
-                if (!IsWithin(path, profileRoot))
-                    throw new InvalidDataException("Shader path escapes its profile directory");
-                if (!path.EndsWith(".hlsl", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Shader source must use the .hlsl extension");
-                var bytecode = CustomShaderCompiler.CompileFile(path);
-                profile.Shaders[key] = new(path, graphics.Renderer.CreateCustomShader(bytecode));
+                profile.Shaders[shader.Key] = new(
+                    shader.Path,
+                    graphics.Renderer.CreateCustomShader(shader.Bytecode)
+                );
             }
-        );
+        }
+        catch
+        {
+            profile.Dispose();
+            throw;
+        }
         lua.PushCopy(-1);
         lua.SetGlobal("__profile");
         lua.Pop(1);
         foreach (var kind in CommandTypes)
             profile.Callbacks.Add(state => DrawCallback(profile, kind, state));
-        profile.Modified = File.GetLastWriteTimeUtc(script);
+        profile.WatchedFiles[script] = File.GetLastWriteTimeUtc(script);
+        foreach (var shader in profile.Shaders.Values)
+            profile.WatchedFiles[shader.Path] = File.GetLastWriteTimeUtc(shader.Path);
         return profile;
     }
 
@@ -1426,8 +1457,11 @@ internal sealed unsafe class HudRuntime : IDisposable
         lastPoll = now;
         foreach (var p in profiles.ToArray())
         {
-            var stamp = File.GetLastWriteTimeUtc(p.Script);
-            if (stamp == p.Modified)
+            if (
+                !p.WatchedFiles.Any(pair =>
+                    File.GetLastWriteTimeUtc(pair.Key) != pair.Value
+                )
+            )
                 continue;
             try
             {
@@ -1441,7 +1475,10 @@ internal sealed unsafe class HudRuntime : IDisposable
             catch (Exception e)
             {
                 diagnostic = "Hot reload failed for " + p.Name + ": " + e.Message;
-                p.Modified = stamp;
+                foreach (var path in p.WatchedFiles.Keys.ToArray())
+                    p.WatchedFiles[path] = File.GetLastWriteTimeUtc(path);
+                if (e.Data["ForzaOSD.ShaderPath"] is string shaderPath)
+                    p.WatchedFiles[shaderPath] = File.GetLastWriteTimeUtc(shaderPath);
             }
         }
     }
@@ -1619,11 +1656,11 @@ internal sealed unsafe class HudRuntime : IDisposable
             ReferenceHeight = 1080,
             OffsetX,
             OffsetY;
-        internal DateTime Modified;
         internal LuaHookFunction Hook = hook;
         internal List<LuaFunction> Callbacks = [];
         internal Dictionary<string, string> Assets = [];
         internal Dictionary<string, ShaderSource> Shaders = [];
+        internal Dictionary<string, DateTime> WatchedFiles = [];
         internal Dictionary<string, ImFontPtr> Fonts = [];
         internal List<Setting> Settings = [];
         internal List<Command> Commands = [];

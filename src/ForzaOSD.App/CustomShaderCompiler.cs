@@ -71,6 +71,23 @@ internal static unsafe class CustomShaderCompiler
         return Compile(source, path);
     }
 
+    internal static string ResolveProfilePath(string profileRoot, string declaredPath)
+    {
+        var root = Path.GetFullPath(profileRoot);
+        var path = Path.GetFullPath(Path.Combine(root, declaredPath));
+        if (
+            !path.Equals(root, StringComparison.OrdinalIgnoreCase)
+            && !path.StartsWith(
+                Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+            throw new InvalidDataException("Shader path escapes its profile directory");
+        if (!path.EndsWith(".hlsl", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Shader source must use the .hlsl extension");
+        return path;
+    }
+
     internal static byte[] Compile(string source, string sourceName = "user_shader.hlsl")
     {
         if (Encoding.UTF8.GetByteCount(source) > MaximumSourceBytes)

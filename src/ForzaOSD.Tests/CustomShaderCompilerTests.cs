@@ -48,4 +48,23 @@ public sealed class CustomShaderCompilerTests
 
         Assert.Throws<InvalidDataException>(() => CustomShaderCompiler.Compile(source));
     }
+
+    [Fact]
+    public void KeepsShaderPathsInsideProfileDirectory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "forzaosd-profile");
+
+        var path = CustomShaderCompiler.ResolveProfilePath(root, "shaders/effect.hlsl");
+        Assert.Equal(
+            Path.Combine(root, "shaders", "effect.hlsl"),
+            path,
+            ignoreCase: true
+        );
+        Assert.Throws<InvalidDataException>(() =>
+            CustomShaderCompiler.ResolveProfilePath(root, "../effect.hlsl")
+        );
+        Assert.Throws<InvalidDataException>(() =>
+            CustomShaderCompiler.ResolveProfilePath(root, "shaders/effect.txt")
+        );
+    }
 }
