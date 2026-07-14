@@ -9,6 +9,7 @@ namespace ForzaOSD.App;
 
 internal sealed unsafe class HudRuntime : IDisposable
 {
+    private static readonly CommandType[] CommandTypes = Enum.GetValues<CommandType>();
     private readonly string appDirectory;
     private readonly D3D11Host graphics;
     private readonly List<Profile> profiles = [];
@@ -198,6 +199,8 @@ internal sealed unsafe class HudRuntime : IDisposable
         lua.PushCopy(-1);
         lua.SetGlobal("__profile");
         lua.Pop(1);
+        foreach (var kind in CommandTypes)
+            profile.Callbacks.Add(state => DrawCallback(profile, kind, state));
         profile.Modified = File.GetLastWriteTimeUtc(script);
         return profile;
     }
@@ -341,7 +344,6 @@ internal sealed unsafe class HudRuntime : IDisposable
     )
     {
         p.Commands.Clear();
-        p.Callbacks.Clear();
         var l = p.Lua;
         l.GetGlobal("__profile");
         l.GetField(-1, "render");
@@ -403,12 +405,10 @@ internal sealed unsafe class HudRuntime : IDisposable
             PushJsonField(l, pair.Key, pair.Value);
         l.SetField(-2, "settings");
         l.NewTable();
-        foreach (var kind in Enum.GetValues<CommandType>())
+        for (var i = 0; i < CommandTypes.Length; i++)
         {
-            LuaFunction callback = state => DrawCallback(p, kind, state);
-            p.Callbacks.Add(callback);
-            l.PushCFunction(callback);
-            l.SetField(-2, CommandName(kind));
+            l.PushCFunction(p.Callbacks[i]);
+            l.SetField(-2, CommandName(CommandTypes[i]));
         }
         l.SetField(-2, "draw");
         Set(l, "time", Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency);
