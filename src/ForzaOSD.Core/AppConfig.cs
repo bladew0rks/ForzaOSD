@@ -191,7 +191,7 @@ public sealed class LayoutConfig
     public float Scale { get; set; } = 1;
 
     [JsonPropertyName("opacity")]
-    public float Opacity { get; set; } = .92f;
+    public float Opacity { get; set; } = 1;
 }
 
 public sealed class ThemeConfig

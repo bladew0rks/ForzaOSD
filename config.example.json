@@ -12,7 +12,7 @@
   "capture_unknown_packets": false,
   "hud_profile": "forzaosd.vfd",
   "hud_modules": [],
-  "layout": { "x": 0.5, "y": 0.82, "scale": 1.0, "opacity": 0.92 },
+  "layout": { "x": 0.5, "y": 0.82, "scale": 1.0, "opacity": 1.0 },
   "theme": { "accent": [0.1, 0.78, 1.0, 1.0], "redline_ratio": 0.9 },
   "widgets": { "speed": true, "rpm": true, "gear": true, "pedals": true },
   "audio": {

@@ -8,6 +8,7 @@ public sealed class ConfigTests
     public void ConfigRoundTrips()
     {
         Assert.Equal("forzaosd.vfd", new AppConfig().HudProfile);
+        Assert.Equal(1, new AppConfig().Layout.Opacity);
 
         var path = Path.GetTempFileName();
         try
