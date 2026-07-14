@@ -63,6 +63,7 @@ or removing a directory.
 | `layout` | table | see below | Local canvas dimensions and scale reference. |
 | `assets` | table | `{}` | Map of asset keys to image paths. |
 | `fonts` | table | `{}` | Map of font keys to font declarations. |
+| `shaders` | table | `{}` | Map of shader keys to profile-local HLSL source paths. |
 | `settings` | table | `{}` | Profile-owned settings schema. |
 | `render` | function | required | Called as `render(ctx)` while the profile is visible. |
 
@@ -173,6 +174,76 @@ size. An empty or unknown font key uses ImGui's default font.
 Image textures are cached by path. Editing an image in place does not invalidate
 the cache; restart ForzaOSD to reload it. An unknown key in `draw.image` is skipped
 without a runtime error.
+
+## Custom DX11 shaders
+
+Profiles can declare HLSL pixel effects stored below their own directory:
+
+```lua
+shaders = {
+  scanlines = "shaders/scanlines.hlsl",
+},
+```
+
+Shader files implement one function. ForzaOSD injects the DX11 resource bindings,
+constant buffer, pixel input, and entry point:
+
+```hlsl
+float4 effect(ForzaOSDInput input)
+{
+    float4 sampled = source_texture.Sample(source_sampler, input.uv);
+    return sampled * input.color;
+}
+```
+
+`ForzaOSDInput` contains:
+
+| Field | Meaning |
+| --- | --- |
+| `float2 uv` | Interpolated command UV coordinates. |
+| `float4 color` | Interpolated `color` and `alpha` tint. |
+| `float2 screen_position` | Current pixel position in viewport pixels. |
+| `float2 local_position` | Position relative to the command's unrotated bounds, normally `0..1`. |
+
+The injected globals are:
+
+| Name | Meaning |
+| --- | --- |
+| `source_texture`, `source_sampler` | Optional declared asset at `t0` and sampler at `s0`; the texture is solid white when no asset is supplied. |
+| `viewport` | Width, height, inverse width, inverse height. |
+| `bounds` | Command screen X, Y, width, and height. |
+| `frame` | Elapsed time and frame delta in `.x` and `.y`; `.z` and `.w` are reserved. |
+| `params0` ... `params3` | Up to 16 Lua parameters, packed four per vector. Missing values are zero. |
+
+Render the effect with `draw.shader`:
+
+```lua
+draw.shader {
+  shader = "scanlines",
+  asset = "face", -- optional
+  x = 0, y = 0, w = 400, h = 200,
+  color = "#5ffff0",
+  alpha = ctx.opacity,
+  sampler = "clamp",
+  params = { ctx.telemetry.rpm, ctx.settings.intensity },
+}
+```
+
+`shader` must name a declared shader. `asset` is optional but, when present, must
+name a declared image. `sampler` is `"clamp"` by default and also accepts `"wrap"`.
+`params` accepts at most 16 finite numbers. Telemetry and settings are deliberately
+passed through Lua rather than exposed as a second implicit shader interface.
+
+Shader commands support the image UV, rotation, pivot, color, alpha, coordinate
+space, and clipping fields. They use the normal straight-alpha blend state. Glow
+fields, extra textures, compute shaders, UAVs, arbitrary constant buffers,
+multi-pass effects, and whole-overlay post-processing are not supported.
+
+Sources compile as `ps_4_0` when the profile loads. They must use the `.hlsl`
+extension, cannot escape their profile directory, cannot use `#include`, and are
+limited to 256 KiB. Compiler diagnostics include the shader filename and source
+line. The bundled `Shader telemetry grid (demo)` module is disabled by default and
+shows a procedural, telemetry-driven example.
 
 ## Settings schema
 
@@ -384,6 +455,7 @@ All drawable commands accept these common fields:
 | `draw.circle` | `cx`, `cy`, `radius` default to `0` | No command-specific fields. |
 | `draw.text` | `x`, `y` default to `0`; `size` defaults to `24` | `font` and `text` default to `""`; `align` defaults to `"left"`; `shadow` defaults to `false`. |
 | `draw.image` | `x`, `y`, `w`, `h` default to `0` | `asset` defaults to `""`; `rotation` defaults to `0`; see the UV and pivot fields below. |
+| `draw.shader` | `x`, `y`, `w`, `h` default to `0` | Requires `shader`; optional `asset`, `params`, and `sampler`; supports image UV and pivot fields. |
 | `draw.set_offset` | `x`, `y` default to `0` | This is profile state, not a queued drawable command. |
 
 `draw.gradient` uses `color` at the start, `color2` at the midpoint, and `color3`
@@ -465,16 +537,17 @@ clip rectangle.
 
 ## Reloading and errors
 
-ForzaOSD checks the modification time of each loaded `profile.lua` every 250 ms.
-A successful reload replaces the Lua state and rebuilds the font atlas. A syntax,
-asset, font, or other load-time error leaves the previous profile instance active
-and prints the error in the Shift+Esc diagnostics.
+ForzaOSD checks the modification time of each loaded `profile.lua` and its declared
+shader sources every 250 ms. A successful reload replaces the Lua state and shader
+programs, then rebuilds the font atlas. A syntax, asset, font, shader compilation,
+or other load-time error leaves the previous profile instance active and prints
+the error in the Shift+Esc diagnostics.
 
-Only `profile.lua` is watched. These changes require a restart:
+These changes require a restart:
 
 - adding or removing a profile directory;
 - replacing an image at the same path;
-- changing files that `profile.lua` does not cause the runtime to reload.
+- changing font or other files that are not watched shader sources.
 
 A runtime error in `render(ctx)` discards that frame's command list and reports a
 diagnostic. Fixing and saving `profile.lua` reloads the profile.
@@ -490,6 +563,11 @@ dofile  loadfile  load  require  package  io  os  debug  coroutine
 
 Profiles cannot load another script, access the filesystem, start a process, open
 a network connection, or use the debug library through the supported API.
+
+Custom HLSL is trusted local GPU code, not part of the Lua security sandbox. The
+runtime restricts paths and only supplies the documented bindings, but a shader
+with excessive or unbounded work can still stall or reset the graphics driver.
+Only install shader profiles from sources you trust.
 
 Profile loading and each `render(ctx)` call have a 100,000-instruction hook limit.
 Exceeding it raises `HUD script exceeded its instruction budget`. Keep expensive

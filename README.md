@@ -6,7 +6,7 @@
 
 ForzaOSD is an external HUD overlay for Forza Horizon 6. It reads the game's telemetry stream over UDP and draws a transparent, click-through window over the game. It does not inject code, hook functions, or read game memory.
 
-HUDs are Lua profiles. Each profile defines its layout, assets, fonts, and settings. The app includes several recreations of existing racing HUDs and a separate VFD radio module that displays an audio spectrum and track metadata. Profiles reload when their files change.
+HUDs are Lua profiles. Each profile defines its layout, assets, fonts, settings, and optional custom DX11 pixel shaders. The app includes several recreations of existing racing HUDs, a separate VFD radio module, and a disabled shader demo module. Profiles reload when their Lua or shader files change.
 
 ## How it works
 

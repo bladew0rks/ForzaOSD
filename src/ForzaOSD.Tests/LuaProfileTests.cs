@@ -1,3 +1,4 @@
+using ForzaOSD.App;
 using KeraLua;
 
 namespace ForzaOSD.Tests;
@@ -48,6 +49,7 @@ public sealed class LuaProfileTests
                 Assert.Contains(lua.ToString(-1), new[] { "hud", "module" });
             }
             lua.Pop(1);
+            ValidateShaders(lua, script);
             foreach (var blocked in BlockedGlobals)
             {
                 lua.GetGlobal(blocked);
@@ -58,6 +60,7 @@ public sealed class LuaProfileTests
         Assert.Contains("native", ids);
         Assert.Contains("forzaosd.vfd", ids);
         Assert.Contains("forzaosd.vfd_radio", ids);
+        Assert.Contains("forzaosd.shader_demo", ids);
     }
 
     [Fact]
@@ -101,6 +104,7 @@ public sealed class LuaProfileTests
                   circle = noop,
                   text = noop,
                   image = noop,
+                  shader = noop,
                   set_offset = noop,
                 }
                 local settings = {}
@@ -157,6 +161,26 @@ public sealed class LuaProfileTests
             lua.SetGlobal(blocked);
         }
         return lua;
+    }
+
+    private static void ValidateShaders(Lua lua, string script)
+    {
+        lua.GetField(-1, "shaders");
+        if (lua.IsTable(-1))
+        {
+            lua.PushNil();
+            while (lua.Next(-2))
+            {
+                Assert.True(lua.IsString(-2), $"{script} has a non-string shader key");
+                Assert.True(lua.IsString(-1), $"{script} has a non-string shader path");
+                var root = Path.GetDirectoryName(script)!;
+                var path = CustomShaderCompiler.ResolveProfilePath(root, lua.ToString(-1));
+                Assert.True(File.Exists(path), $"Missing shader source: {path}");
+                Assert.NotEmpty(CustomShaderCompiler.CompileFile(path));
+                lua.Pop(1);
+            }
+        }
+        lua.Pop(1);
     }
 
     private static string FindRepositoryRoot()
