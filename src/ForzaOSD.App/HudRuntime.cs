@@ -197,6 +197,23 @@ internal sealed unsafe class HudRuntime : IDisposable
         }
         lua.Pop(1);
         profile.Settings.Sort((a, b) => a.Order.CompareTo(b.Order));
+        ReadStringMap(
+            lua,
+            -1,
+            "shaders",
+            (key, value) =>
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                    throw new InvalidDataException("Shader key cannot be empty");
+                var path = Path.GetFullPath(Path.Combine(profileRoot, value));
+                if (!IsWithin(path, profileRoot))
+                    throw new InvalidDataException("Shader path escapes its profile directory");
+                if (!path.EndsWith(".hlsl", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Shader source must use the .hlsl extension");
+                var bytecode = CustomShaderCompiler.CompileFile(path);
+                profile.Shaders[key] = new(path, graphics.Renderer.CreateCustomShader(bytecode));
+            }
+        );
         lua.PushCopy(-1);
         lua.SetGlobal("__profile");
         lua.Pop(1);
@@ -447,7 +464,9 @@ internal sealed unsafe class HudRuntime : IDisposable
             l.SetField(-2, CommandName(CommandTypes[i]));
         }
         l.SetField(-2, "draw");
-        Set(l, "time", Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency);
+        p.FrameTime = (float)(Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency);
+        p.FrameDeltaTime = ImGui.GetIO().DeltaTime;
+        Set(l, "time", p.FrameTime);
         Set(l, "edit_mode", edit);
         Set(l, "metric", config.Metric);
         Set(l, "opacity", config.Layout.Opacity);
@@ -626,6 +645,8 @@ internal sealed unsafe class HudRuntime : IDisposable
             Size = (float)Number(l, 1, "size", 24),
             Text = String(l, 1, "text", ""),
             Asset = String(l, 1, "asset", ""),
+            Shader = String(l, 1, "shader", ""),
+            Sampler = String(l, 1, "sampler", "clamp"),
             Font = String(l, 1, "font", ""),
             Align = String(l, 1, "align", "left"),
             Direction = String(l, 1, "direction", "horizontal"),
@@ -639,7 +660,51 @@ internal sealed unsafe class HudRuntime : IDisposable
             ClipY = (float)Number(l, 1, "clip_y", 0),
             ClipW = (float)Number(l, 1, "clip_w", 0),
             ClipH = (float)Number(l, 1, "clip_h", 0),
+            Time = p.FrameTime,
+            DeltaTime = p.FrameDeltaTime,
         };
+        if (type == CommandType.Shader)
+        {
+            if (!p.Shaders.ContainsKey(c.Shader))
+                return l.Error("Unknown shader: " + c.Shader);
+            if (c.Asset.Length > 0 && !p.Assets.ContainsKey(c.Asset))
+                return l.Error("Unknown shader asset: " + c.Asset);
+            if (c.Sampler is not ("clamp" or "wrap"))
+                return l.Error("Shader sampler must be 'clamp' or 'wrap'");
+            l.GetField(1, "params");
+            if (l.IsTable(-1))
+            {
+                for (long i = 1; i <= 17; i++)
+                {
+                    l.RawGetInteger(-1, i);
+                    if (l.IsNil(-1))
+                    {
+                        l.Pop(1);
+                        break;
+                    }
+                    if (!l.IsNumber(-1))
+                    {
+                        l.Pop(2);
+                        return l.Error("Shader params must contain only numbers");
+                    }
+                    var value = l.ToNumber(-1);
+                    l.Pop(1);
+                    if (!double.IsFinite(value))
+                    {
+                        l.Pop(1);
+                        return l.Error("Shader params must be finite numbers");
+                    }
+                    if (i > 16)
+                    {
+                        l.Pop(1);
+                        return l.Error("Shader params are limited to 16 numbers");
+                    }
+                    c.Parameters[(int)i - 1] = (float)value;
+                    c.ParameterCount = (int)i;
+                }
+            }
+            l.Pop(1);
+        }
         if (type == CommandType.Offset)
         {
             p.OffsetX = c.X;
@@ -868,6 +933,63 @@ internal sealed unsafe class HudRuntime : IDisposable
                                 topRight,
                                 bottomRight,
                                 bottomLeft,
+                                uvTopLeft,
+                                new Vector2(c.UvX2, c.UvY1),
+                                uvBottomRight,
+                                new Vector2(c.UvX1, c.UvY2),
+                                col
+                            );
+                        }
+                    }
+                    break;
+                case CommandType.Shader:
+                    if (p.Shaders.TryGetValue(c.Shader, out var shader))
+                    {
+                        var sourceTexture = c.Asset.Length > 0
+                            ? graphics.Renderer.GetOrLoadTexture(
+                                p.Assets[c.Asset],
+                                graphics.Device
+                            )
+                            : IntPtr.Zero;
+                        var shaderSize = new Vector2(c.W, c.H) * scale;
+                        var shaderTexture = graphics.Renderer.RegisterCustomShaderDraw(
+                            shader.Program,
+                            sourceTexture,
+                            new Vector4(a.X, a.Y, shaderSize.X, shaderSize.Y),
+                            c.Time,
+                            c.DeltaTime,
+                            c.Parameters.AsSpan(0, c.ParameterCount),
+                            c.Sampler == "wrap"
+                        );
+                        var uvTopLeft = new Vector2(c.UvX1, c.UvY1);
+                        var uvBottomRight = new Vector2(c.UvX2, c.UvY2);
+                        if (Math.Abs(c.Rotation) < 0.001f)
+                            d.AddImage(
+                                shaderTexture,
+                                a,
+                                a + shaderSize,
+                                uvTopLeft,
+                                uvBottomRight,
+                                col
+                            );
+                        else
+                        {
+                            var pivot = a + shaderSize * new Vector2(c.PivotX, c.PivotY);
+                            var radians = c.Rotation * MathF.PI / 180;
+                            d.AddImageQuad(
+                                shaderTexture,
+                                RotatePoint(a, pivot, radians),
+                                RotatePoint(
+                                    a + new Vector2(shaderSize.X, 0),
+                                    pivot,
+                                    radians
+                                ),
+                                RotatePoint(a + shaderSize, pivot, radians),
+                                RotatePoint(
+                                    a + new Vector2(0, shaderSize.Y),
+                                    pivot,
+                                    radians
+                                ),
                                 uvTopLeft,
                                 new Vector2(c.UvX2, c.UvY1),
                                 uvBottomRight,
@@ -1468,6 +1590,7 @@ internal sealed unsafe class HudRuntime : IDisposable
             CommandType.Circle => "circle",
             CommandType.Text => "text",
             CommandType.Image => "image",
+            CommandType.Shader => "shader",
             _ => "set_offset",
         };
 
@@ -1500,12 +1623,26 @@ internal sealed unsafe class HudRuntime : IDisposable
         internal LuaHookFunction Hook = hook;
         internal List<LuaFunction> Callbacks = [];
         internal Dictionary<string, string> Assets = [];
+        internal Dictionary<string, ShaderSource> Shaders = [];
         internal Dictionary<string, ImFontPtr> Fonts = [];
         internal List<Setting> Settings = [];
         internal List<Command> Commands = [];
+        internal float FrameTime,
+            FrameDeltaTime;
 
-        public void Dispose() => Lua.Dispose();
+        public void Dispose()
+        {
+            foreach (var shader in Shaders.Values)
+                shader.Program.Dispose();
+            Shaders.Clear();
+            Lua.Dispose();
+        }
     }
+
+    private sealed record ShaderSource(
+        string Path,
+        ImGuiRenderer.CustomShaderProgram Program
+    );
 
     private sealed class Setting
     {
@@ -1528,6 +1665,7 @@ internal sealed unsafe class HudRuntime : IDisposable
         Circle,
         Text,
         Image,
+        Shader,
         Offset,
     }
 
@@ -1558,11 +1696,17 @@ internal sealed unsafe class HudRuntime : IDisposable
             Size;
         internal string Text = "",
             Asset = "",
+            Shader = "",
+            Sampler = "clamp",
             Font = "",
             Align = "left",
             Direction = "horizontal",
             Space = "profile";
         internal bool Shadow;
+        internal float Time,
+            DeltaTime;
+        internal int ParameterCount;
+        internal float[] Parameters = new float[16];
         internal uint Color,
             Color2,
             Color3,

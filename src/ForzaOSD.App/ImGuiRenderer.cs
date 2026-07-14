@@ -32,9 +32,13 @@ namespace ForzaOSD.App
         Blob bloomPixelShaderBlob;
         ID3D11PixelShader bloomPixelShader;
         ID3D11Buffer bloomConstantBuffer;
+        ID3D11Buffer customShaderConstantBuffer;
         ID3D11SamplerState fontSampler;
         ID3D11SamplerState bloomSampler;
+        ID3D11SamplerState customClampSampler;
+        ID3D11SamplerState customWrapSampler;
         ID3D11ShaderResourceView fontTextureView;
+        ID3D11ShaderResourceView whiteTextureView;
         ID3D11RasterizerState rasterizerState;
         ID3D11BlendState blendState;
         ID3D11DepthStencilState depthStencilState;
@@ -48,7 +52,9 @@ namespace ForzaOSD.App
         );
         Dictionary<string, IntPtr> bloomTextureIds = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<IntPtr, BloomTexture> bloomTextures = new();
+        Dictionary<IntPtr, CustomShaderDraw> customShaderDraws = new();
         long nextBloomTextureId;
+        long nextCustomShaderTextureId = long.MinValue;
 
         public ImGuiRenderer(ID3D11Device device, ID3D11DeviceContext deviceContext)
         {
@@ -67,7 +73,10 @@ namespace ForzaOSD.App
         public void Render(ImDrawDataPtr data)
         {
             if (data.DisplaySize.X <= 0.0f || data.DisplaySize.Y <= 0.0f)
+            {
+                customShaderDraws.Clear();
                 return;
+            }
 
             ID3D11DeviceContext ctx = deviceContext;
 
@@ -197,7 +206,18 @@ namespace ForzaOSD.App
                         ctx.RSSetScissorRects([rect]);
 
                         ID3D11ShaderResourceView texture;
-                        if (bloomTextures.TryGetValue(cmd.TextureId, out var bloom))
+                        if (customShaderDraws.TryGetValue(cmd.TextureId, out var custom))
+                        {
+                            UpdateCustomShaderConstants(ctx, data, custom);
+                            ctx.PSSetShader(custom.Program.Shader);
+                            ctx.PSSetConstantBuffers(0, [customShaderConstantBuffer]);
+                            ctx.PSSetSamplers(
+                                0,
+                                [custom.Wrap ? customWrapSampler : customClampSampler]
+                            );
+                            texture = custom.Texture;
+                        }
+                        else if (bloomTextures.TryGetValue(cmd.TextureId, out var bloom))
                         {
                             UpdateBloomConstants(ctx, bloom);
                             ctx.PSSetShader(bloomPixelShader);
@@ -224,6 +244,35 @@ namespace ForzaOSD.App
                 global_idx_offset += cmdList.IdxBuffer.Size;
                 global_vtx_offset += cmdList.VtxBuffer.Size;
             }
+            customShaderDraws.Clear();
+        }
+
+        void UpdateCustomShaderConstants(
+            ID3D11DeviceContext ctx,
+            ImDrawDataPtr data,
+            CustomShaderDraw draw
+        )
+        {
+            var resource = ctx.Map(
+                customShaderConstantBuffer,
+                0,
+                MapMode.WriteDiscard,
+                Vortice.Direct3D11.MapFlags.None
+            );
+            var values = resource.AsSpan<float>(28);
+            values.Clear();
+            values[0] = data.DisplaySize.X;
+            values[1] = data.DisplaySize.Y;
+            values[2] = 1f / Math.Max(data.DisplaySize.X, 1f);
+            values[3] = 1f / Math.Max(data.DisplaySize.Y, 1f);
+            values[4] = draw.Bounds.X;
+            values[5] = draw.Bounds.Y;
+            values[6] = draw.Bounds.Z;
+            values[7] = draw.Bounds.W;
+            values[8] = draw.Time;
+            values[9] = draw.DeltaTime;
+            draw.Parameters.CopyTo(values[12..]);
+            ctx.Unmap(customShaderConstantBuffer, 0);
         }
 
         void UpdateBloomConstants(ID3D11DeviceContext ctx, BloomTexture bloom)
@@ -457,6 +506,37 @@ namespace ForzaOSD.App
             return bloomId;
         }
 
+        internal CustomShaderProgram CreateCustomShader(byte[] bytecode) =>
+            new(device.CreatePixelShader(bytecode));
+
+        internal IntPtr RegisterCustomShaderDraw(
+            CustomShaderProgram program,
+            IntPtr sourceTexture,
+            Vector4 bounds,
+            float time,
+            float deltaTime,
+            ReadOnlySpan<float> parameters,
+            bool wrap
+        )
+        {
+            var id = new IntPtr(nextCustomShaderTextureId++);
+            var values = new float[16];
+            parameters[..Math.Min(parameters.Length, values.Length)].CopyTo(values);
+            customShaderDraws[id] = new()
+            {
+                Program = program,
+                Texture = sourceTexture == IntPtr.Zero
+                    ? whiteTextureView
+                    : textureResources[sourceTexture],
+                Bounds = bounds,
+                Time = time,
+                DeltaTime = deltaTime,
+                Parameters = values,
+                Wrap = wrap,
+            };
+            return id;
+        }
+
         void CreateDeviceObjects()
         {
             var vertexShaderCode =
@@ -659,6 +739,15 @@ namespace ForzaOSD.App
                     CPUAccessFlags = CpuAccessFlags.Write,
                 }
             );
+            customShaderConstantBuffer = device.CreateBuffer(
+                new BufferDescription
+                {
+                    ByteWidth = 28 * sizeof(float),
+                    Usage = ResourceUsage.Dynamic,
+                    BindFlags = BindFlags.ConstantBuffer,
+                    CPUAccessFlags = CpuAccessFlags.Write,
+                }
+            );
 
             bloomSampler = device.CreateSamplerState(
                 new SamplerDescription
@@ -673,6 +762,9 @@ namespace ForzaOSD.App
                     MaxLOD = 0,
                 }
             );
+            customClampSampler = CreateCustomSampler(TextureAddressMode.Clamp);
+            customWrapSampler = CreateCustomSampler(TextureAddressMode.Wrap);
+            CreateWhiteTexture();
 
             var blendDesc = new BlendDescription { AlphaToCoverageEnable = false };
 
@@ -728,9 +820,13 @@ namespace ForzaOSD.App
             fileTextures.Clear();
             bloomTextureIds.Clear();
             bloomTextures.Clear();
+            customShaderDraws.Clear();
             ReleaseAndNullify(ref fontSampler);
             ReleaseAndNullify(ref bloomSampler);
+            ReleaseAndNullify(ref customClampSampler);
+            ReleaseAndNullify(ref customWrapSampler);
             ReleaseAndNullify(ref fontTextureView);
+            ReleaseAndNullify(ref whiteTextureView);
             ReleaseAndNullify(ref indexBuffer);
             ReleaseAndNullify(ref vertexBuffer);
             ReleaseAndNullify(ref blendState);
@@ -739,6 +835,7 @@ namespace ForzaOSD.App
             ReleaseAndNullify(ref pixelShader);
             ReleaseAndNullify(ref pixelShaderBlob);
             ReleaseAndNullify(ref bloomConstantBuffer);
+            ReleaseAndNullify(ref customShaderConstantBuffer);
             ReleaseAndNullify(ref bloomPixelShader);
             ReleaseAndNullify(ref bloomPixelShaderBlob);
             ReleaseAndNullify(ref constantBuffer);
@@ -753,6 +850,58 @@ namespace ForzaOSD.App
             public Vector2 SampleOffset;
             public float Intensity;
             public uint Color;
+        }
+
+        ID3D11SamplerState CreateCustomSampler(TextureAddressMode addressMode) =>
+            device.CreateSamplerState(
+                new SamplerDescription
+                {
+                    Filter = Filter.MinMagMipLinear,
+                    AddressU = addressMode,
+                    AddressV = addressMode,
+                    AddressW = addressMode,
+                    ComparisonFunc = ComparisonFunction.Always,
+                    MinLOD = 0,
+                    MaxLOD = 0,
+                }
+            );
+
+        void CreateWhiteTexture()
+        {
+            uint pixel = uint.MaxValue;
+            var description = new Texture2DDescription
+            {
+                Width = 1,
+                Height = 1,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = Format.R8G8B8A8_UNorm,
+                SampleDescription = SampleDescription.Default,
+                Usage = ResourceUsage.Immutable,
+                BindFlags = BindFlags.ShaderResource,
+                CPUAccessFlags = CpuAccessFlags.None,
+            };
+            var initial = new SubresourceData((IntPtr)(&pixel), sizeof(uint), 0);
+            using var texture = device.CreateTexture2D(description, [initial]);
+            whiteTextureView = device.CreateShaderResourceView(texture);
+        }
+
+        internal sealed class CustomShaderProgram(ID3D11PixelShader shader) : IDisposable
+        {
+            internal ID3D11PixelShader Shader { get; } = shader;
+
+            public void Dispose() => Shader.Dispose();
+        }
+
+        sealed class CustomShaderDraw
+        {
+            internal CustomShaderProgram Program;
+            internal ID3D11ShaderResourceView Texture;
+            internal Vector4 Bounds;
+            internal float Time;
+            internal float DeltaTime;
+            internal float[] Parameters;
+            internal bool Wrap;
         }
     }
 }
