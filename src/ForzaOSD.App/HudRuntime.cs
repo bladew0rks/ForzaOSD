@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using ForzaOSD.Core;
 using ImGuiNET;
@@ -544,7 +545,7 @@ internal sealed unsafe class HudRuntime : IDisposable
             flags |= ImGuiWindowFlags.NoInputs;
         ImGui.Begin("##LuaHudCanvas_" + p.Id, flags);
         var d = ImGui.GetWindowDrawList();
-        foreach (var c in p.Commands)
+        foreach (ref readonly var c in CollectionsMarshal.AsSpan(p.Commands))
         {
             var commandOrigin = c.Space == "screen" ? Vector2.Zero : origin;
             var a = commandOrigin + new Vector2(c.X, c.Y) * scale;
@@ -764,7 +765,7 @@ internal sealed unsafe class HudRuntime : IDisposable
         ImGui.End();
     }
 
-    private static bool HasGlow(Command command) =>
+    private static bool HasGlow(in Command command) =>
         command.GlowRadius > 0 && command.GlowIntensity > 0;
 
     private static uint ScaleAlpha(uint color, float amount)
@@ -1402,8 +1403,10 @@ internal sealed unsafe class HudRuntime : IDisposable
         Offset,
     }
 
-    private sealed class Command
+    private struct Command
     {
+        public Command() { }
+
         internal CommandType Type;
         internal float X,
             Y,
