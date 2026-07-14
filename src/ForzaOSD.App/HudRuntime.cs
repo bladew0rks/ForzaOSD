@@ -301,6 +301,9 @@ internal sealed unsafe class HudRuntime : IDisposable
         var foreground = config.ShowOnlyWhenForeground;
         if (ImGui.Checkbox("Only show over foreground game", ref foreground))
             config.ShowOnlyWhenForeground = foreground;
+        var maxFps = config.MaxFps;
+        if (ImGui.SliderInt("Frame rate limit", ref maxFps, 30, 240))
+            config.MaxFps = maxFps;
         if (ImGui.Button("Restart listener"))
             restart = true;
         DrawAudioSettings(config, audio, ref restartAudio);

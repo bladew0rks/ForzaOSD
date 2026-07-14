@@ -6,7 +6,7 @@ namespace ForzaOSD.Core;
 
 public sealed class AppConfig
 {
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     [JsonPropertyName("version")]
     public int Version { get; set; } = CurrentVersion;
@@ -31,6 +31,9 @@ public sealed class AppConfig
 
     [JsonPropertyName("show_only_when_foreground")]
     public bool ShowOnlyWhenForeground { get; set; } = true;
+
+    [JsonPropertyName("max_fps")]
+    public int MaxFps { get; set; } = 60;
 
     [JsonPropertyName("capture_unknown_packets")]
     public bool CaptureUnknownPackets { get; set; }
@@ -127,6 +130,7 @@ public sealed class AppConfig
         Layout.Y = Math.Clamp(Layout.Y, 0, 1);
         Layout.Scale = Math.Clamp(Layout.Scale, .5f, 3);
         Layout.Opacity = Math.Clamp(Layout.Opacity, .1f, 1);
+        MaxFps = Math.Clamp(MaxFps, 30, 240);
         Theme.RedlineRatio = Math.Clamp(Theme.RedlineRatio, .5f, 1);
         HudModules ??= [];
         HudModules = HudModules

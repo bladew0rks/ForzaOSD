@@ -252,7 +252,7 @@ internal sealed class D3D11Host : IDisposable
         context.OMSetRenderTargets(target!);
         context.ClearRenderTargetView(target!, new Vortice.Mathematics.Color4(0, 0, 0, 0));
         renderer.Render(ImGui.GetDrawData());
-        swapChain.Present(1, PresentFlags.None);
+        swapChain.Present(0, PresentFlags.None);
     }
 
     public void Dispose()

@@ -18,6 +18,7 @@ public sealed class ConfigTests
                 Metric = false,
                 HotkeyVk = 0x41,
                 HotkeyModifiers = 6,
+                MaxFps = 90,
             };
             source.Save(path);
             var loaded = AppConfig.Load(path).Config;
@@ -25,6 +26,7 @@ public sealed class ConfigTests
             Assert.False(loaded.Metric);
             Assert.Equal(0x41, loaded.HotkeyVk);
             Assert.Equal(6, loaded.HotkeyModifiers);
+            Assert.Equal(90, loaded.MaxFps);
         }
         finally
         {
@@ -40,9 +42,27 @@ public sealed class ConfigTests
         {
             File.WriteAllText(path, "{\"version\":4,\"hotkey_vk\":121}");
             var loaded = AppConfig.Load(path).Config;
-            Assert.Equal(8, loaded.Version);
+            Assert.Equal(9, loaded.Version);
             Assert.Equal(0x1B, loaded.HotkeyVk);
             Assert.Equal(4, loaded.HotkeyModifiers);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, 30)]
+    [InlineData(60, 60)]
+    [InlineData(1000, 240)]
+    public void FrameRateLimitIsNormalized(int configured, int expected)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            new AppConfig { MaxFps = configured }.Save(path);
+            Assert.Equal(expected, AppConfig.Load(path).Config.MaxFps);
         }
         finally
         {

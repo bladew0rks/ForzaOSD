@@ -89,6 +89,7 @@ internal sealed class OverlayHost : IDisposable
             (uint)config.HotkeyVk
         );
         var timer = Stopwatch.StartNew();
+        var framePacer = new FramePacer();
         double previous = timer.Elapsed.TotalSeconds;
         while (running)
         {
@@ -96,13 +97,16 @@ internal sealed class OverlayHost : IDisposable
             var game = FindGameWindow();
             if (!UpdateWindow(game))
             {
+                previous = timer.Elapsed.TotalSeconds;
+                framePacer.Reset();
                 Thread.Sleep(50);
                 continue;
             }
+            framePacer.Wait(config.MaxFps);
             var telemetrySnapshot = telemetry.Snapshot;
             audio.PollMediaControls(config.Audio, telemetrySnapshot.IsDriving);
             var now = timer.Elapsed.TotalSeconds;
-            graphics.NewFrame((float)Math.Max(.001, now - previous));
+            graphics.NewFrame((float)Math.Clamp(now - previous, .001, .1));
             previous = now;
             var actions = hud.Render(
                 config,
