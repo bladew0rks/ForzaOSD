@@ -8,14 +8,18 @@ namespace ForzaOSD.App;
 internal sealed class OverlayHost : IDisposable
 {
     private const string WindowClass = "ForzaOSDOverlayWindow.Managed";
+    private const long WindowSearchIntervalMs = 1000;
     private readonly AppConfig config;
     private readonly string configPath;
     private readonly TelemetryService telemetry;
     private readonly AudioSpectrumService audio;
     private readonly NativeMethods.WndProc wndProc;
     private nint hwnd;
+    private nint gameWindow;
+    private long nextGameWindowSearch;
     private bool running = true,
         editMode;
+    private string gameWindowTitle = "";
     private string status;
     private D3D11Host? graphics;
     private HudRuntime? hud;
@@ -209,13 +213,32 @@ internal sealed class OverlayHost : IDisposable
 
     private nint FindGameWindow()
     {
+        if (!gameWindowTitle.Equals(config.WindowTitle, StringComparison.Ordinal))
+        {
+            gameWindow = 0;
+            gameWindowTitle = config.WindowTitle;
+            nextGameWindowSearch = 0;
+        }
+        if (
+            gameWindow != 0
+            && NativeMethods.IsWindow(gameWindow)
+            && NativeMethods.IsWindowVisible(gameWindow)
+        )
+            return gameWindow;
+
+        gameWindow = 0;
+        var now = Environment.TickCount64;
+        if (now < nextGameWindowSearch)
+            return 0;
+        nextGameWindowSearch = now + WindowSearchIntervalMs;
+
         nint found = 0;
+        var text = new char[512];
         NativeMethods.EnumWindows(
             (candidate, _) =>
             {
                 if (!NativeMethods.IsWindowVisible(candidate))
                     return true;
-                var text = new char[512];
                 var len = NativeMethods.GetWindowText(candidate, text, text.Length);
                 if (
                     len > 0
@@ -232,7 +255,8 @@ internal sealed class OverlayHost : IDisposable
             },
             0
         );
-        return found;
+        gameWindow = found;
+        return gameWindow;
     }
 
     private bool UpdateWindow(nint game)

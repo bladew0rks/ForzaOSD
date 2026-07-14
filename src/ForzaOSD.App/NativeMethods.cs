@@ -203,6 +203,10 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsWindow(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindowVisible(nint hwnd);
 
     [LibraryImport("user32.dll")]
