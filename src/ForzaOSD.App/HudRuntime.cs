@@ -265,75 +265,27 @@ internal sealed unsafe class HudRuntime : IDisposable
         ImGui.SetNextWindowBgAlpha(1);
         ImGui.Begin("ForzaOSD settings");
         ImGui.TextUnformatted("Shift+Esc: close edit mode");
-        if (ImGui.BeginCombo("Speedometer", primary.Name))
-        {
-            foreach (var p in profiles.Where(p => p.Valid && p.Role == "hud"))
-            {
-                var chosen = config.HudProfile == p.Id;
-                if (ImGui.Selectable(p.Name, chosen))
-                    config.HudProfile = p.Id;
-                if (chosen)
-                    ImGui.SetItemDefaultFocus();
-            }
-            ImGui.EndCombo();
-        }
         var availableModules = profiles.Where(p => p.Valid && p.Role == "module").ToArray();
-        if (availableModules.Length > 0)
+        if (ImGui.BeginTabBar("##SettingsTabs"))
         {
-            ImGui.SeparatorText("Modules");
-            foreach (var module in availableModules)
+            if (ImGui.BeginTabItem("HUD"))
             {
-                var enabled = IsModuleEnabled(config, module.Id);
-                ImGui.PushID(module.Id);
-                if (ImGui.Checkbox(module.Name, ref enabled))
-                    EnableModule(config, module.Id, enabled);
-                ImGui.PopID();
+                DrawHudSettings(config, primary, availableModules);
+                ImGui.EndTabItem();
             }
+            if (ImGui.BeginTabItem("Connection"))
+            {
+                DrawConnectionSettings(config, telemetry, status, ref restart);
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Audio"))
+            {
+                DrawAudioSettings(config, audio, ref restartAudio);
+                ImGui.EndTabItem();
+            }
+            ImGui.EndTabBar();
         }
-        if (!string.IsNullOrEmpty(diagnostic))
-            ImGui.TextWrapped(diagnostic);
         ImGui.Separator();
-        ImGui.Text($"Telemetry: {telemetry.Format}");
-        ImGui.Text($"Packets: {telemetry.PacketsPerSecond:F1}/s  size: {telemetry.LastPacketSize}");
-        if (!string.IsNullOrEmpty(telemetry.Detail))
-            ImGui.TextWrapped(telemetry.Detail);
-        if (!string.IsNullOrEmpty(status))
-            ImGui.TextWrapped(status);
-        ImGui.SeparatorText("Connection");
-        var bind = config.BindAddress;
-        if (ImGui.InputText("Bind address", ref bind, 64))
-            config.BindAddress = bind;
-        var port = (int)config.UdpPort;
-        if (ImGui.InputInt("UDP port", ref port))
-            config.UdpPort = (ushort)Math.Clamp(port, 1, 65535);
-        var processName = config.GameProcessName;
-        if (ImGui.InputText("Game process", ref processName, 128))
-            config.GameProcessName = processName;
-        var foreground = config.ShowOnlyWhenForeground;
-        if (ImGui.Checkbox("Only show over foreground game", ref foreground))
-            config.ShowOnlyWhenForeground = foreground;
-        var maxFps = config.MaxFps;
-        if (ImGui.SliderInt("Frame rate limit", ref maxFps, 30, 240))
-            config.MaxFps = maxFps;
-        if (ImGui.Button("Restart listener"))
-            restart = true;
-        DrawAudioSettings(config, audio, ref restartAudio);
-        ImGui.SeparatorText("Global");
-        var metric = config.Metric;
-        if (ImGui.Checkbox("Metric units", ref metric))
-            config.Metric = metric;
-        var opacity = config.Layout.Opacity;
-        if (ImGui.SliderFloat("Opacity", ref opacity, .1f, 1))
-            config.Layout.Opacity = opacity;
-        ImGui.SeparatorText(primary.Name);
-        DrawSettings(config, primary);
-        foreach (var module in availableModules.Where(module =>
-            IsModuleEnabled(config, module.Id)
-        ))
-        {
-            ImGui.SeparatorText(module.Name);
-            DrawSettings(config, module);
-        }
         if (ImGui.Button("Save settings"))
             save = true;
         ImGui.SameLine();
@@ -341,6 +293,91 @@ internal sealed unsafe class HudRuntime : IDisposable
             quit = true;
         ImGui.End();
         return new(save, quit, restart, restartAudio);
+    }
+
+    private void DrawHudSettings(
+        AppConfig config,
+        Profile primary,
+        IReadOnlyList<Profile> availableModules
+    )
+    {
+        ImGui.SeparatorText("Profiles");
+        if (ImGui.BeginCombo("Speedometer", primary.Name))
+        {
+            foreach (var profile in profiles.Where(p => p.Valid && p.Role == "hud"))
+            {
+                var chosen = config.HudProfile == profile.Id;
+                if (ImGui.Selectable(profile.Name, chosen))
+                    config.HudProfile = profile.Id;
+                if (chosen)
+                    ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        foreach (var module in availableModules)
+        {
+            var enabled = IsModuleEnabled(config, module.Id);
+            ImGui.PushID(module.Id);
+            if (ImGui.Checkbox(module.Name, ref enabled))
+                EnableModule(config, module.Id, enabled);
+            ImGui.PopID();
+        }
+
+        ImGui.SeparatorText("Display");
+        var metric = config.Metric;
+        if (ImGui.Checkbox("Metric units", ref metric))
+            config.Metric = metric;
+        var opacity = config.Layout.Opacity;
+        if (ImGui.SliderFloat("Opacity", ref opacity, .1f, 1))
+            config.Layout.Opacity = opacity;
+        var maxFps = config.MaxFps;
+        if (ImGui.SliderInt("Frame rate limit", ref maxFps, 30, 240))
+            config.MaxFps = maxFps;
+
+        ImGui.SeparatorText(primary.Name);
+        DrawSettings(config, primary);
+        foreach (var module in availableModules)
+            if (IsModuleEnabled(config, module.Id))
+            {
+                ImGui.SeparatorText(module.Name);
+                DrawSettings(config, module);
+            }
+    }
+
+    private void DrawConnectionSettings(
+        AppConfig config,
+        TelemetrySnapshot telemetry,
+        string status,
+        ref bool restart
+    )
+    {
+        ImGui.SeparatorText("Status");
+        ImGui.Text($"Telemetry: {telemetry.Format}");
+        ImGui.Text($"Packets: {telemetry.PacketsPerSecond:F1}/s  size: {telemetry.LastPacketSize}");
+        if (!string.IsNullOrEmpty(telemetry.Detail))
+            ImGui.TextWrapped(telemetry.Detail);
+        if (!string.IsNullOrEmpty(diagnostic))
+            ImGui.TextWrapped(diagnostic);
+        if (!string.IsNullOrEmpty(status))
+            ImGui.TextWrapped(status);
+
+        ImGui.SeparatorText("Listener");
+        var bind = config.BindAddress;
+        if (ImGui.InputText("Bind address", ref bind, 64))
+            config.BindAddress = bind;
+        var port = (int)config.UdpPort;
+        if (ImGui.InputInt("UDP port", ref port))
+            config.UdpPort = (ushort)Math.Clamp(port, 1, 65535);
+        if (ImGui.Button("Restart listener"))
+            restart = true;
+
+        ImGui.SeparatorText("Overlay target");
+        var processName = config.GameProcessName;
+        if (ImGui.InputText("Game process", ref processName, 128))
+            config.GameProcessName = processName;
+        var foreground = config.ShowOnlyWhenForeground;
+        if (ImGui.Checkbox("Only show over foreground game", ref foreground))
+            config.ShowOnlyWhenForeground = foreground;
     }
 
     private void RenderProfile(
@@ -1032,7 +1069,7 @@ internal sealed unsafe class HudRuntime : IDisposable
         ref bool restart
     )
     {
-        ImGui.SeparatorText("Audio visualization");
+        ImGui.SeparatorText("Capture");
         var enabled = config.Audio.Enabled;
         if (ImGui.Checkbox("Enable spectrum capture", ref enabled))
         {
