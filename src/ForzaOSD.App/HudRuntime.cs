@@ -700,8 +700,8 @@ internal sealed unsafe class HudRuntime : IDisposable
                 return l.Error("Unknown shader: " + c.Shader);
             if (c.Asset.Length > 0 && !p.Assets.ContainsKey(c.Asset))
                 return l.Error("Unknown shader asset: " + c.Asset);
-            if (c.Sampler is not ("clamp" or "wrap"))
-                return l.Error("Shader sampler must be 'clamp' or 'wrap'");
+            if (c.Sampler is not ("clamp" or "wrap" or "border"))
+                return l.Error("Shader sampler must be 'clamp', 'wrap', or 'border'");
             c.Parameters = new float[16];
             l.GetField(1, "params");
             if (l.IsTable(-1))
@@ -775,6 +775,7 @@ internal sealed unsafe class HudRuntime : IDisposable
             flags |= ImGuiWindowFlags.NoInputs;
         ImGui.Begin("##LuaHudCanvas_" + p.Id, flags);
         var d = ImGui.GetWindowDrawList();
+        Span<float> bloomParameters = stackalloc float[8];
         foreach (ref readonly var c in CollectionsMarshal.AsSpan(p.Commands))
         {
             var commandOrigin = c.Space == "screen" ? Vector2.Zero : origin;
@@ -921,14 +922,29 @@ internal sealed unsafe class HudRuntime : IDisposable
                         )
                         {
                             var uvMargin = new Vector2(c.GlowRadius / c.W, c.GlowRadius / c.H);
-                            var bloomTexture = graphics.Renderer.GetOrLoadBloomTexture(
-                                path,
-                                graphics.Device,
-                                uvMargin,
-                                c.GlowIntensity,
-                                c.GlowColor
-                            );
+                            bloomParameters.Clear();
+                            bloomParameters[0] = uvMargin.X;
+                            bloomParameters[1] = uvMargin.Y;
+                            bloomParameters[2] = c.GlowIntensity;
+                            bloomParameters[4] = (c.GlowColor & 255) / 255f;
+                            bloomParameters[5] = ((c.GlowColor >> 8) & 255) / 255f;
+                            bloomParameters[6] = ((c.GlowColor >> 16) & 255) / 255f;
+                            bloomParameters[7] = ((c.GlowColor >> 24) & 255) / 255f;
                             var margin = new Vector2(c.GlowRadius * scale);
+                            var bloomTexture = graphics.Renderer.RegisterCustomShaderDraw(
+                                graphics.Renderer.BuiltInBloomProgram,
+                                texture,
+                                new Vector4(
+                                    a.X - margin.X,
+                                    a.Y - margin.Y,
+                                    imageSize.X + margin.X * 2,
+                                    imageSize.Y + margin.Y * 2
+                                ),
+                                c.Time,
+                                c.DeltaTime,
+                                bloomParameters,
+                                ImGuiRenderer.ShaderSampler.Border
+                            );
                             d.AddImage(
                                 bloomTexture,
                                 a - margin,
@@ -996,7 +1012,7 @@ internal sealed unsafe class HudRuntime : IDisposable
                             c.Time,
                             c.DeltaTime,
                             c.Parameters.AsSpan(0, c.ParameterCount),
-                            c.Sampler == "wrap"
+                            ParseShaderSampler(c.Sampler)
                         );
                         var uvTopLeft = new Vector2(c.UvX1, c.UvY1);
                         var uvBottomRight = new Vector2(c.UvX2, c.UvY2);
@@ -1054,6 +1070,14 @@ internal sealed unsafe class HudRuntime : IDisposable
 
     private static bool HasGlow(in Command command) =>
         command.GlowRadius > 0 && command.GlowIntensity > 0;
+
+    private static ImGuiRenderer.ShaderSampler ParseShaderSampler(string sampler) =>
+        sampler switch
+        {
+            "wrap" => ImGuiRenderer.ShaderSampler.Wrap,
+            "border" => ImGuiRenderer.ShaderSampler.Border,
+            _ => ImGuiRenderer.ShaderSampler.Clamp,
+        };
 
     private static uint ScaleAlpha(uint color, float amount)
     {

@@ -25,4 +25,7 @@
     <PackageReference Include="Vortice.D3DCompiler" />
     <PackageReference Include="Vortice.Direct2D1" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="Shaders\**\*.hlsl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

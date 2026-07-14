@@ -29,14 +29,11 @@ namespace ForzaOSD.App
         ID3D11Buffer constantBuffer;
         Blob pixelShaderBlob;
         ID3D11PixelShader pixelShader;
-        Blob bloomPixelShaderBlob;
-        ID3D11PixelShader bloomPixelShader;
-        ID3D11Buffer bloomConstantBuffer;
         ID3D11Buffer customShaderConstantBuffer;
         ID3D11SamplerState fontSampler;
-        ID3D11SamplerState bloomSampler;
         ID3D11SamplerState customClampSampler;
         ID3D11SamplerState customWrapSampler;
+        ID3D11SamplerState customBorderSampler;
         ID3D11ShaderResourceView fontTextureView;
         ID3D11ShaderResourceView whiteTextureView;
         ID3D11RasterizerState rasterizerState;
@@ -50,11 +47,11 @@ namespace ForzaOSD.App
         Dictionary<string, ID3D11ShaderResourceView> fileTextures = new(
             StringComparer.OrdinalIgnoreCase
         );
-        Dictionary<string, IntPtr> bloomTextureIds = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<IntPtr, BloomTexture> bloomTextures = new();
         Dictionary<IntPtr, CustomShaderDraw> customShaderDraws = new();
-        long nextBloomTextureId;
         long nextCustomShaderTextureId = long.MinValue;
+        CustomShaderProgram builtInBloomProgram;
+
+        internal CustomShaderProgram BuiltInBloomProgram => builtInBloomProgram;
 
         public ImGuiRenderer(ID3D11Device device, ID3D11DeviceContext deviceContext)
         {
@@ -213,17 +210,9 @@ namespace ForzaOSD.App
                             ctx.PSSetConstantBuffers(0, [customShaderConstantBuffer]);
                             ctx.PSSetSamplers(
                                 0,
-                                [custom.Wrap ? customWrapSampler : customClampSampler]
+                                [SamplerFor(custom.Sampler)]
                             );
                             texture = custom.Texture;
-                        }
-                        else if (bloomTextures.TryGetValue(cmd.TextureId, out var bloom))
-                        {
-                            UpdateBloomConstants(ctx, bloom);
-                            ctx.PSSetShader(bloomPixelShader);
-                            ctx.PSSetConstantBuffers(0, [bloomConstantBuffer]);
-                            ctx.PSSetSamplers(0, [bloomSampler]);
-                            texture = bloom.Texture;
                         }
                         else
                         {
@@ -273,26 +262,6 @@ namespace ForzaOSD.App
             values[9] = draw.DeltaTime;
             draw.Parameters.CopyTo(values[12..]);
             ctx.Unmap(customShaderConstantBuffer, 0);
-        }
-
-        void UpdateBloomConstants(ID3D11DeviceContext ctx, BloomTexture bloom)
-        {
-            var resource = ctx.Map(
-                bloomConstantBuffer,
-                0,
-                MapMode.WriteDiscard,
-                Vortice.Direct3D11.MapFlags.None
-            );
-            var values = resource.AsSpan<float>(8);
-            values[0] = bloom.SampleOffset.X;
-            values[1] = bloom.SampleOffset.Y;
-            values[2] = bloom.Intensity;
-            values[3] = 0;
-            values[4] = (bloom.Color & 255) / 255f;
-            values[5] = ((bloom.Color >> 8) & 255) / 255f;
-            values[6] = ((bloom.Color >> 16) & 255) / 255f;
-            values[7] = ((bloom.Color >> 24) & 255) / 255f;
-            ctx.Unmap(bloomConstantBuffer, 0);
         }
 
         public void Dispose()
@@ -480,32 +449,6 @@ namespace ForzaOSD.App
             }
         }
 
-        public IntPtr GetOrLoadBloomTexture(
-            string path,
-            ID3D11Device sourceDevice,
-            Vector2 sampleOffset,
-            float intensity,
-            uint color
-        )
-        {
-            var textureId = GetOrLoadTexture(path, sourceDevice);
-            if (!bloomTextureIds.TryGetValue(path, out var bloomId))
-            {
-                bloomId = new IntPtr(Interlocked.Decrement(ref nextBloomTextureId));
-                bloomTextureIds[path] = bloomId;
-                bloomTextures[bloomId] = new BloomTexture
-                {
-                    Texture = textureResources[textureId],
-                };
-            }
-
-            var bloom = bloomTextures[bloomId];
-            bloom.SampleOffset = sampleOffset;
-            bloom.Intensity = intensity;
-            bloom.Color = color;
-            return bloomId;
-        }
-
         internal CustomShaderProgram CreateCustomShader(byte[] bytecode) =>
             new(device.CreatePixelShader(bytecode));
 
@@ -516,7 +459,7 @@ namespace ForzaOSD.App
             float time,
             float deltaTime,
             ReadOnlySpan<float> parameters,
-            bool wrap
+            ShaderSampler sampler
         )
         {
             var id = new IntPtr(nextCustomShaderTextureId++);
@@ -532,7 +475,7 @@ namespace ForzaOSD.App
                 Time = time,
                 DeltaTime = deltaTime,
                 Parameters = values,
-                Wrap = wrap,
+                Sampler = sampler,
             };
             return id;
         }
@@ -662,83 +605,6 @@ namespace ForzaOSD.App
                 )
             );
 
-            var bloomPixelShaderCode =
-                @"cbuffer bloomBuffer : register(b0)
-                    {
-                        float4 BloomParams;
-                        float4 GlowColor;
-                    };
-
-                    struct PS_INPUT
-                    {
-                        float4 pos : SV_POSITION;
-                        float4 col : COLOR0;
-                        float2 uv  : TEXCOORD0;
-                    };
-
-                    SamplerState sampler0 : register(s0);
-                    Texture2D texture0 : register(t0);
-
-                    void AddSample(float2 uv, float weight, inout float3 light, inout float coverage)
-                    {
-                        float4 sample = texture0.Sample(sampler0, uv);
-                        float brightness = max(sample.r, max(sample.g, sample.b));
-                        float contribution = sample.a * brightness * weight;
-                        light += sample.rgb * contribution;
-                        coverage += contribution;
-                    }
-
-                    float4 main(PS_INPUT input) : SV_Target
-                    {
-                        float2 radius = BloomParams.xy;
-                        float3 light = 0;
-                        float coverage = 0;
-
-                        AddSample(input.uv, 0.12, light, coverage);
-                        AddSample(input.uv + float2( radius.x * 0.5, 0), 0.12, light, coverage);
-                        AddSample(input.uv + float2(-radius.x * 0.5, 0), 0.12, light, coverage);
-                        AddSample(input.uv + float2(0,  radius.y * 0.5), 0.12, light, coverage);
-                        AddSample(input.uv + float2(0, -radius.y * 0.5), 0.12, light, coverage);
-                        AddSample(input.uv + radius * float2( 0.5,  0.5), 0.07, light, coverage);
-                        AddSample(input.uv + radius * float2(-0.5,  0.5), 0.07, light, coverage);
-                        AddSample(input.uv + radius * float2( 0.5, -0.5), 0.07, light, coverage);
-                        AddSample(input.uv + radius * float2(-0.5, -0.5), 0.07, light, coverage);
-                        AddSample(input.uv + float2( radius.x, 0), 0.03, light, coverage);
-                        AddSample(input.uv + float2(-radius.x, 0), 0.03, light, coverage);
-                        AddSample(input.uv + float2(0,  radius.y), 0.03, light, coverage);
-                        AddSample(input.uv + float2(0, -radius.y), 0.03, light, coverage);
-
-                        float3 color = light / max(coverage, 0.0001);
-                        float alpha = saturate(coverage * BloomParams.z) * input.col.a * GlowColor.a;
-                        return float4(color * GlowColor.rgb, alpha);
-                    }";
-
-            Compiler.Compile(
-                bloomPixelShaderCode,
-                "main",
-                "ps",
-                "ps_4_0",
-                out bloomPixelShaderBlob,
-                out errorBlob
-            );
-            if (bloomPixelShaderBlob == null)
-                throw new Exception("error compiling bloom pixel shader");
-
-            bloomPixelShader = device.CreatePixelShader(
-                new Span<byte>(
-                    (void*)bloomPixelShaderBlob.BufferPointer,
-                    checked((int)(nuint)bloomPixelShaderBlob.BufferSize)
-                )
-            );
-            bloomConstantBuffer = device.CreateBuffer(
-                new BufferDescription
-                {
-                    ByteWidth = 32,
-                    Usage = ResourceUsage.Dynamic,
-                    BindFlags = BindFlags.ConstantBuffer,
-                    CPUAccessFlags = CpuAccessFlags.Write,
-                }
-            );
             customShaderConstantBuffer = device.CreateBuffer(
                 new BufferDescription
                 {
@@ -749,21 +615,14 @@ namespace ForzaOSD.App
                 }
             );
 
-            bloomSampler = device.CreateSamplerState(
-                new SamplerDescription
-                {
-                    Filter = Filter.MinMagMipLinear,
-                    AddressU = TextureAddressMode.Border,
-                    AddressV = TextureAddressMode.Border,
-                    AddressW = TextureAddressMode.Border,
-                    BorderColor = new Color4(0, 0, 0, 0),
-                    ComparisonFunc = ComparisonFunction.Always,
-                    MinLOD = 0,
-                    MaxLOD = 0,
-                }
-            );
             customClampSampler = CreateCustomSampler(TextureAddressMode.Clamp);
             customWrapSampler = CreateCustomSampler(TextureAddressMode.Wrap);
+            customBorderSampler = CreateCustomSampler(TextureAddressMode.Border);
+            builtInBloomProgram = CreateCustomShader(
+                CustomShaderCompiler.CompileFile(
+                    Path.Combine(AppContext.BaseDirectory, "Shaders", "bloom.hlsl")
+                )
+            );
             CreateWhiteTexture();
 
             var blendDesc = new BlendDescription { AlphaToCoverageEnable = false };
@@ -818,13 +677,11 @@ namespace ForzaOSD.App
             foreach (var texture in fileTextures.Values)
                 texture.Dispose();
             fileTextures.Clear();
-            bloomTextureIds.Clear();
-            bloomTextures.Clear();
             customShaderDraws.Clear();
             ReleaseAndNullify(ref fontSampler);
-            ReleaseAndNullify(ref bloomSampler);
             ReleaseAndNullify(ref customClampSampler);
             ReleaseAndNullify(ref customWrapSampler);
+            ReleaseAndNullify(ref customBorderSampler);
             ReleaseAndNullify(ref fontTextureView);
             ReleaseAndNullify(ref whiteTextureView);
             ReleaseAndNullify(ref indexBuffer);
@@ -834,22 +691,13 @@ namespace ForzaOSD.App
             ReleaseAndNullify(ref rasterizerState);
             ReleaseAndNullify(ref pixelShader);
             ReleaseAndNullify(ref pixelShaderBlob);
-            ReleaseAndNullify(ref bloomConstantBuffer);
             ReleaseAndNullify(ref customShaderConstantBuffer);
-            ReleaseAndNullify(ref bloomPixelShader);
-            ReleaseAndNullify(ref bloomPixelShaderBlob);
+            builtInBloomProgram?.Dispose();
+            builtInBloomProgram = null;
             ReleaseAndNullify(ref constantBuffer);
             ReleaseAndNullify(ref inputLayout);
             ReleaseAndNullify(ref vertexShader);
             ReleaseAndNullify(ref vertexShaderBlob);
-        }
-
-        sealed class BloomTexture
-        {
-            public ID3D11ShaderResourceView Texture;
-            public Vector2 SampleOffset;
-            public float Intensity;
-            public uint Color;
         }
 
         ID3D11SamplerState CreateCustomSampler(TextureAddressMode addressMode) =>
@@ -860,6 +708,7 @@ namespace ForzaOSD.App
                     AddressU = addressMode,
                     AddressV = addressMode,
                     AddressW = addressMode,
+                    BorderColor = new Color4(0, 0, 0, 0),
                     ComparisonFunc = ComparisonFunction.Always,
                     MinLOD = 0,
                     MaxLOD = 0,
@@ -901,7 +750,22 @@ namespace ForzaOSD.App
             internal float Time;
             internal float DeltaTime;
             internal float[] Parameters;
-            internal bool Wrap;
+            internal ShaderSampler Sampler;
+        }
+
+        ID3D11SamplerState SamplerFor(ShaderSampler sampler) =>
+            sampler switch
+            {
+                ShaderSampler.Wrap => customWrapSampler,
+                ShaderSampler.Border => customBorderSampler,
+                _ => customClampSampler,
+            };
+
+        internal enum ShaderSampler
+        {
+            Clamp,
+            Wrap,
+            Border,
         }
     }
 }
