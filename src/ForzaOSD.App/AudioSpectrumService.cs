@@ -559,6 +559,7 @@ internal sealed class SpectrumAnalyzer
     private const int TransformSize = 2048;
     private const int TransformPower = 11;
     private readonly float[] input = new float[TransformSize];
+    private readonly NAudio.Dsp.Complex[] fft = new NAudio.Dsp.Complex[TransformSize];
     private readonly float[] smoothed;
     private int inputCount;
 
@@ -652,7 +653,6 @@ internal sealed class SpectrumAnalyzer
 
     private SpectrumFrame Analyze(int sampleRate)
     {
-        var fft = new NAudio.Dsp.Complex[TransformSize];
         double squareSum = 0;
         float peak = 0;
         for (var i = 0; i < TransformSize; i++)
@@ -663,6 +663,7 @@ internal sealed class SpectrumAnalyzer
             fft[i].X = (float)(
                 sample * FastFourierTransform.HammingWindow(i, TransformSize)
             );
+            fft[i].Y = 0;
         }
         FastFourierTransform.FFT(true, TransformPower, fft);
 
