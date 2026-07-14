@@ -60,7 +60,7 @@ local function draw_tires(draw, tm, alpha, edit_mode)
 
   draw.image {
     asset = "tyre_center",
-    x = x,
+    x = x + 10.5,
     y = y,
     w = 201,
     h = 217,
@@ -134,7 +134,9 @@ local function gauge_number(value)
 end
 
 local function draw_boost(draw, tm, alpha, edit_mode)
-  local x, y, w, h = 1210, -4, 171, 186
+  local scale = 1.25
+  local w, h = 171 * scale, 186 * scale
+  local x, y = 1295.5 - w * 0.5, 99 - h * 0.5
   local boost_psi = edit_mode and not tm.available and 14.5 or tm.boost
   local boost_bar = boost_psi * 0.0689476
   local peak_bar = peak_positive_boost * 0.0689476
@@ -154,18 +156,18 @@ local function draw_boost(draw, tm, alpha, edit_mode)
   local radius = w * 75.75 / 228
   if boost_bar >= 0 then
     local end_angle = math.pi + math.pi * clamp(boost_bar / maximum_bar, 0, 1)
-    draw_arc(draw, cx, cy, radius, math.pi, end_angle, alpha, 6.75)
+    draw_arc(draw, cx, cy, radius, math.pi, end_angle, alpha, 6.75 * scale)
   else
     local start_angle = math.pi - math.pi * 0.5 * clamp(-boost_bar, 0, 1)
-    draw_arc(draw, cx, cy, radius, start_angle, math.pi, alpha, 6.75)
+    draw_arc(draw, cx, cy, radius, start_angle, math.pi, alpha, 6.75 * scale)
   end
 
   draw.text {
     font = "text",
     text = gauge_number(maximum_bar / 2),
     x = cx,
-    y = y + 13,
-    size = 18,
+    y = y + 13 * scale,
+    size = 18 * scale,
     align = "center",
     color = "#ffffff",
     alpha = alpha,
@@ -174,9 +176,9 @@ local function draw_boost(draw, tm, alpha, edit_mode)
   draw.text {
     font = "text",
     text = "0",
-    x = x + 15,
-    y = cy - 8,
-    size = 18,
+    x = x + 15 * scale,
+    y = cy - 8 * scale,
+    size = 18 * scale,
     color = "#ffffff",
     alpha = alpha,
     shadow = true,
@@ -185,8 +187,8 @@ local function draw_boost(draw, tm, alpha, edit_mode)
     font = "text",
     text = "-1",
     x = cx,
-    y = y + h - 21,
-    size = 18,
+    y = y + h - 21 * scale,
+    size = 18 * scale,
     align = "center",
     color = "#ffffff",
     alpha = alpha,
@@ -195,9 +197,9 @@ local function draw_boost(draw, tm, alpha, edit_mode)
   draw.text {
     font = "text",
     text = gauge_number(maximum_bar),
-    x = x + w - 10,
-    y = cy - 8,
-    size = 18,
+    x = x + w - 10 * scale,
+    y = cy - 8 * scale,
+    size = 18 * scale,
     align = "right",
     color = "#ffffff",
     alpha = alpha,
@@ -347,11 +349,6 @@ local function render(ctx)
   draw.image { asset = "throttle_icon", x = 1160, y = 112, w = 39, h = 39, color = "#ffffff", alpha = alpha }
 
   if settings.show_extras then
-    draw.text {
-      font = "text", text = string.format("FUEL %.0f%%", 100 * math.max(0, math.min(1, tm.fuel))),
-      x = 1350, y = 95, size = 22, align = "right",
-      color = "#ffffff", alpha = alpha, shadow = false,
-    }
     if tm.handbrake then
       draw.image { asset = "handbrake", x = 1165, y = 145, w = 40, h = 40, color = "#ff3333", alpha = alpha }
     end
@@ -363,7 +360,7 @@ return {
   id = "csp.gt7hud",
   name = "gt7",
   author = "Inori / ForzaOSD adapter",
-  version = "1.3.0",
+  version = "1.3.1",
   asset_root = "assets",
   layout = { width = 1260, height = 240, reference_height = 2160 },
   assets = assets,
@@ -376,7 +373,7 @@ return {
     x = { type = "number", label = "Horizontal", default = 0.5, min = 0, max = 1, order = 1 },
     y = { type = "number", label = "Vertical", default = 0.944, min = 0.2, max = 1.1, order = 2 },
     scale = { type = "number", label = "Scale", default = 1, min = 0.3, max = 2, order = 3 },
-    show_extras = { type = "boolean", label = "Fuel and handbrake", default = true, order = 4 },
+    show_extras = { type = "boolean", label = "Handbrake", default = true, order = 4 },
     show_tires = { type = "boolean", label = "Tire temperatures", default = true, order = 5 },
     show_boost = { type = "boolean", label = "Boost gauge", default = true, order = 6 },
     show_race_info = { type = "boolean", label = "Race position and lap", default = true, order = 7 },
