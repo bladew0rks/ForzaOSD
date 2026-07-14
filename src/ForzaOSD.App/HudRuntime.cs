@@ -702,6 +702,7 @@ internal sealed unsafe class HudRuntime : IDisposable
                 return l.Error("Unknown shader asset: " + c.Asset);
             if (c.Sampler is not ("clamp" or "wrap"))
                 return l.Error("Shader sampler must be 'clamp' or 'wrap'");
+            c.Parameters = new float[16];
             l.GetField(1, "params");
             if (l.IsTable(-1))
             {
@@ -733,6 +734,11 @@ internal sealed unsafe class HudRuntime : IDisposable
                     c.Parameters[(int)i - 1] = (float)value;
                     c.ParameterCount = (int)i;
                 }
+            }
+            else if (!l.IsNil(-1))
+            {
+                l.Pop(1);
+                return l.Error("Shader params must be a table");
             }
             l.Pop(1);
         }
@@ -1743,7 +1749,7 @@ internal sealed unsafe class HudRuntime : IDisposable
         internal float Time,
             DeltaTime;
         internal int ParameterCount;
-        internal float[] Parameters = new float[16];
+        internal float[] Parameters = [];
         internal uint Color,
             Color2,
             Color3,
