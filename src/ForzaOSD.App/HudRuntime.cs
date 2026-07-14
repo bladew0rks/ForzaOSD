@@ -455,6 +455,8 @@ internal sealed unsafe class HudRuntime : IDisposable
     )
     {
         p.Commands.Clear();
+        p.LayerDepth = 0;
+        p.LayerCount = 0;
         var l = p.Lua;
         l.GetGlobal("__profile");
         l.GetField(-1, "render");
@@ -691,14 +693,19 @@ internal sealed unsafe class HudRuntime : IDisposable
             ClipY = (float)Number(l, 1, "clip_y", 0),
             ClipW = (float)Number(l, 1, "clip_w", 0),
             ClipH = (float)Number(l, 1, "clip_h", 0),
+            Margin = (float)Number(l, 1, "margin", 0),
             Time = p.FrameTime,
             DeltaTime = p.FrameDeltaTime,
         };
-        if (type == CommandType.Shader)
+        if (type is CommandType.Shader or CommandType.Layer)
         {
             if (!p.Shaders.ContainsKey(c.Shader))
                 return l.Error("Unknown shader: " + c.Shader);
-            if (c.Asset.Length > 0 && !p.Assets.ContainsKey(c.Asset))
+            if (
+                type == CommandType.Shader
+                && c.Asset.Length > 0
+                && !p.Assets.ContainsKey(c.Asset)
+            )
                 return l.Error("Unknown shader asset: " + c.Asset);
             if (c.Sampler is not ("clamp" or "wrap" or "border"))
                 return l.Error("Shader sampler must be 'clamp', 'wrap', or 'border'");
@@ -742,6 +749,34 @@ internal sealed unsafe class HudRuntime : IDisposable
             }
             l.Pop(1);
         }
+        if (type == CommandType.Layer)
+        {
+            if (p.LayerDepth > 0)
+                return l.Error("Effect layers cannot be nested");
+            if (++p.LayerCount > 16)
+                return l.Error("A profile can render at most 16 effect layers per frame");
+            if (c.W <= 0 || c.H <= 0)
+                return l.Error("Effect layer width and height must be positive");
+            if (c.Margin is < 0 or > 512)
+                return l.Error("Effect layer margin must be between 0 and 512");
+            if (!l.IsFunction(2))
+                return l.Error("draw.layer requires a render function as its second argument");
+
+            p.Commands.Add(c);
+            p.LayerDepth++;
+            l.PushCopy(2);
+            var result = l.PCall(0, 0, 0);
+            p.LayerDepth--;
+            if (result != LuaStatus.OK)
+            {
+                var message = l.ToString(-1);
+                l.Pop(1);
+                return l.Error(message);
+            }
+            c.LayerEnd = true;
+            p.Commands.Add(c);
+            return 0;
+        }
         if (type == CommandType.Offset)
         {
             p.OffsetX = c.X;
@@ -776,12 +811,15 @@ internal sealed unsafe class HudRuntime : IDisposable
         ImGui.Begin("##LuaHudCanvas_" + p.Id, flags);
         var d = ImGui.GetWindowDrawList();
         Span<float> bloomParameters = stackalloc float[8];
+        ImGuiRenderer.EffectLayerRegistration activeLayer = default;
+        Vector4 activeLayerBounds = default;
+        var hasActiveLayer = false;
         foreach (ref readonly var c in CollectionsMarshal.AsSpan(p.Commands))
         {
             var commandOrigin = c.Space == "screen" ? Vector2.Zero : origin;
             var a = commandOrigin + new Vector2(c.X, c.Y) * scale;
             var col = c.Color;
-            var clipped = c.ClipW > 0 && c.ClipH > 0;
+            var clipped = c.Type != CommandType.Layer && c.ClipW > 0 && c.ClipH > 0;
             if (clipped)
                 d.PushClipRect(
                     commandOrigin + new Vector2(c.ClipX, c.ClipY) * scale,
@@ -791,6 +829,51 @@ internal sealed unsafe class HudRuntime : IDisposable
                 );
             switch (c.Type)
             {
+                case CommandType.Layer:
+                    if (!c.LayerEnd)
+                    {
+                        var margin = c.Margin * scale;
+                        var layerSize = new Vector2(c.W, c.H) * scale;
+                        activeLayerBounds = new(
+                            a.X - margin,
+                            a.Y - margin,
+                            Math.Max(1, layerSize.X + margin * 2),
+                            Math.Max(1, layerSize.Y + margin * 2)
+                        );
+                        var layerShader = p.Shaders[c.Shader];
+                        activeLayer = graphics.Renderer.RegisterEffectLayer(
+                            layerShader.Program,
+                            activeLayerBounds,
+                            c.Time,
+                            c.DeltaTime,
+                            c.Parameters.AsSpan(0, c.ParameterCount),
+                            ParseShaderSampler(c.Sampler)
+                        );
+                        d.AddCallback(
+                            ImGuiRenderer.BeginEffectLayerCallback,
+                            activeLayer.LayerId
+                        );
+                        hasActiveLayer = true;
+                    }
+                    else if (hasActiveLayer)
+                    {
+                        d.AddCallback(
+                            ImGuiRenderer.EndEffectLayerCallback,
+                            activeLayer.LayerId
+                        );
+                        var topLeft = new Vector2(activeLayerBounds.X, activeLayerBounds.Y);
+                        d.AddImage(
+                            activeLayer.TextureId,
+                            topLeft,
+                            topLeft
+                                + new Vector2(activeLayerBounds.Z, activeLayerBounds.W),
+                            Vector2.Zero,
+                            Vector2.One,
+                            c.Color
+                        );
+                        hasActiveLayer = false;
+                    }
+                    break;
                 case CommandType.Rect:
                     if (HasGlow(c))
                         DrawRectGlow(
@@ -1658,6 +1741,7 @@ internal sealed unsafe class HudRuntime : IDisposable
             CommandType.Text => "text",
             CommandType.Image => "image",
             CommandType.Shader => "shader",
+            CommandType.Layer => "layer",
             _ => "set_offset",
         };
 
@@ -1696,6 +1780,8 @@ internal sealed unsafe class HudRuntime : IDisposable
         internal List<Command> Commands = [];
         internal float FrameTime,
             FrameDeltaTime;
+        internal int LayerDepth,
+            LayerCount;
 
         public void Dispose()
         {
@@ -1733,6 +1819,7 @@ internal sealed unsafe class HudRuntime : IDisposable
         Text,
         Image,
         Shader,
+        Layer,
         Offset,
     }
 
@@ -1760,6 +1847,7 @@ internal sealed unsafe class HudRuntime : IDisposable
             ClipY,
             ClipW,
             ClipH,
+            Margin,
             Size;
         internal string Text = "",
             Asset = "",
@@ -1769,7 +1857,8 @@ internal sealed unsafe class HudRuntime : IDisposable
             Align = "left",
             Direction = "horizontal",
             Space = "profile";
-        internal bool Shadow;
+        internal bool Shadow,
+            LayerEnd;
         internal float Time,
             DeltaTime;
         internal int ParameterCount;

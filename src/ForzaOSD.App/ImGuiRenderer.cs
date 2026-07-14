@@ -15,7 +15,7 @@ using ImDrawIdx = System.UInt16;
 
 namespace ForzaOSD.App
 {
-    public unsafe class ImGuiRenderer
+    public unsafe class ImGuiRenderer : IDisposable
     {
         const int VertexConstantBufferSize = 16 * 4;
 
@@ -48,10 +48,16 @@ namespace ForzaOSD.App
             StringComparer.OrdinalIgnoreCase
         );
         Dictionary<IntPtr, CustomShaderDraw> customShaderDraws = new();
+        Dictionary<IntPtr, EffectLayerDraw> effectLayerDraws = new();
+        List<EffectLayerTarget> effectLayerTargets = new();
         long nextCustomShaderTextureId = long.MinValue;
+        long nextEffectLayerId = 1;
+        long effectFrame;
         CustomShaderProgram builtInBloomProgram;
 
         internal CustomShaderProgram BuiltInBloomProgram => builtInBloomProgram;
+        internal static readonly IntPtr BeginEffectLayerCallback = new(-1001);
+        internal static readonly IntPtr EndEffectLayerCallback = new(-1002);
 
         public ImGuiRenderer(ID3D11Device device, ID3D11DeviceContext deviceContext)
         {
@@ -67,11 +73,11 @@ namespace ForzaOSD.App
             CreateDeviceObjects();
         }
 
-        public void Render(ImDrawDataPtr data)
+        public void Render(ImDrawDataPtr data, ID3D11RenderTargetView mainTarget)
         {
             if (data.DisplaySize.X <= 0.0f || data.DisplaySize.Y <= 0.0f)
             {
-                customShaderDraws.Clear();
+                EndFrameEffects();
                 return;
             }
 
@@ -144,74 +150,69 @@ namespace ForzaOSD.App
             ctx.Unmap(vertexBuffer, 0);
             ctx.Unmap(indexBuffer, 0);
 
-            var constResource = ctx.Map(
-                constantBuffer,
-                0,
-                MapMode.WriteDiscard,
-                Vortice.Direct3D11.MapFlags.None
-            );
-            var span = constResource.AsSpan<float>(VertexConstantBufferSize);
             float L = data.DisplayPos.X;
             float R = data.DisplayPos.X + data.DisplaySize.X;
             float T = data.DisplayPos.Y;
             float B = data.DisplayPos.Y + data.DisplaySize.Y;
-            float[] mvp =
-            {
-                2.0f / (R - L),
-                0.0f,
-                0.0f,
-                0.0f,
-                0.0f,
-                2.0f / (T - B),
-                0.0f,
-                0.0f,
-                0.0f,
-                0.0f,
-                0.5f,
-                0.0f,
-                (R + L) / (L - R),
-                (T + B) / (B - T),
-                0.5f,
-                1.0f,
-            };
-            mvp.CopyTo(span);
-            ctx.Unmap(constantBuffer, 0);
+            UpdateProjection(ctx, L, R, T, B);
 
             SetupRenderState(data, ctx);
 
             int global_idx_offset = 0;
             int global_vtx_offset = 0;
             Vector2 clip_off = data.DisplayPos;
+            EffectLayerDraw activeLayer = null;
             for (int n = 0; n < data.CmdListsCount; n++)
             {
                 var cmdList = data.CmdLists[n];
                 for (int i = 0; i < cmdList.CmdBuffer.Size; i++)
                 {
                     var cmd = cmdList.CmdBuffer[i];
-                    if (cmd.UserCallback != IntPtr.Zero)
+                    if (cmd.UserCallback == BeginEffectLayerCallback)
+                    {
+                        if (activeLayer != null)
+                            throw new InvalidOperationException("Effect layers cannot be nested");
+                        if (!effectLayerDraws.TryGetValue(cmd.UserCallbackData, out activeLayer))
+                            throw new InvalidOperationException("Unknown effect layer callback");
+                        BeginEffectLayer(ctx, activeLayer);
+                        clip_off = new(activeLayer.Bounds.X, activeLayer.Bounds.Y);
+                    }
+                    else if (cmd.UserCallback == EndEffectLayerCallback)
+                    {
+                        if (
+                            activeLayer == null
+                            || activeLayer.Id != cmd.UserCallbackData
+                        )
+                            throw new InvalidOperationException("Mismatched effect layer callback");
+                        ctx.OMSetRenderTargets(mainTarget);
+                        SetupRenderState(data, ctx);
+                        UpdateProjection(ctx, L, R, T, B);
+                        clip_off = data.DisplayPos;
+                        activeLayer = null;
+                    }
+                    else if (cmd.UserCallback != IntPtr.Zero)
                     {
                         throw new NotImplementedException("user callbacks not implemented");
                     }
                     else
                     {
+                        var clipWidth = activeLayer?.Target.Width ?? (int)data.DisplaySize.X;
+                        var clipHeight = activeLayer?.Target.Height ?? (int)data.DisplaySize.Y;
                         var rect = new Vortice.RawRect(
-                            (int)(cmd.ClipRect.X - clip_off.X),
-                            (int)(cmd.ClipRect.Y - clip_off.Y),
-                            (int)(cmd.ClipRect.Z - clip_off.X),
-                            (int)(cmd.ClipRect.W - clip_off.Y)
+                            Math.Clamp((int)(cmd.ClipRect.X - clip_off.X), 0, clipWidth),
+                            Math.Clamp((int)(cmd.ClipRect.Y - clip_off.Y), 0, clipHeight),
+                            Math.Clamp((int)(cmd.ClipRect.Z - clip_off.X), 0, clipWidth),
+                            Math.Clamp((int)(cmd.ClipRect.W - clip_off.Y), 0, clipHeight)
                         );
                         ctx.RSSetScissorRects([rect]);
 
                         ID3D11ShaderResourceView texture;
                         if (customShaderDraws.TryGetValue(cmd.TextureId, out var custom))
                         {
-                            UpdateCustomShaderConstants(ctx, data, custom);
+                            UpdateCustomShaderConstants(ctx, data, custom, activeLayer);
                             ctx.PSSetShader(custom.Program.Shader);
                             ctx.PSSetConstantBuffers(0, [customShaderConstantBuffer]);
-                            ctx.PSSetSamplers(
-                                0,
-                                [SamplerFor(custom.Sampler)]
-                            );
+                            ctx.PSSetSamplers(0, [SamplerFor(custom.Sampler)]);
                             texture = custom.Texture;
                         }
                         else
@@ -233,13 +234,48 @@ namespace ForzaOSD.App
                 global_idx_offset += cmdList.IdxBuffer.Size;
                 global_vtx_offset += cmdList.VtxBuffer.Size;
             }
-            customShaderDraws.Clear();
+            if (activeLayer != null)
+                ctx.OMSetRenderTargets(mainTarget);
+            EndFrameEffects();
+        }
+
+        void UpdateProjection(ID3D11DeviceContext ctx, float L, float R, float T, float B)
+        {
+            var constResource = ctx.Map(
+                constantBuffer,
+                0,
+                MapMode.WriteDiscard,
+                Vortice.Direct3D11.MapFlags.None
+            );
+            var span = constResource.AsSpan<float>(VertexConstantBufferSize);
+            float[] mvp =
+            {
+                2.0f / (R - L),
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                2.0f / (T - B),
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.5f,
+                0.0f,
+                (R + L) / (L - R),
+                (T + B) / (B - T),
+                0.5f,
+                1.0f,
+            };
+            mvp.CopyTo(span);
+            ctx.Unmap(constantBuffer, 0);
         }
 
         void UpdateCustomShaderConstants(
             ID3D11DeviceContext ctx,
             ImDrawDataPtr data,
-            CustomShaderDraw draw
+            CustomShaderDraw draw,
+            EffectLayerDraw activeLayer
         )
         {
             var resource = ctx.Map(
@@ -260,6 +296,11 @@ namespace ForzaOSD.App
             values[7] = draw.Bounds.W;
             values[8] = draw.Time;
             values[9] = draw.DeltaTime;
+            if (activeLayer != null)
+            {
+                values[10] = activeLayer.Bounds.X;
+                values[11] = activeLayer.Bounds.Y;
+            }
             draw.Parameters.CopyTo(values[12..]);
             ctx.Unmap(customShaderConstantBuffer, 0);
         }
@@ -462,15 +503,37 @@ namespace ForzaOSD.App
             ShaderSampler sampler
         )
         {
+            var texture = sourceTexture == IntPtr.Zero
+                ? whiteTextureView
+                : textureResources[sourceTexture];
+            return RegisterCustomShaderDraw(
+                program,
+                texture,
+                bounds,
+                time,
+                deltaTime,
+                parameters,
+                sampler
+            );
+        }
+
+        IntPtr RegisterCustomShaderDraw(
+            CustomShaderProgram program,
+            ID3D11ShaderResourceView texture,
+            Vector4 bounds,
+            float time,
+            float deltaTime,
+            ReadOnlySpan<float> parameters,
+            ShaderSampler sampler
+        )
+        {
             var id = new IntPtr(nextCustomShaderTextureId++);
             var values = new float[16];
             parameters[..Math.Min(parameters.Length, values.Length)].CopyTo(values);
             customShaderDraws[id] = new()
             {
                 Program = program,
-                Texture = sourceTexture == IntPtr.Zero
-                    ? whiteTextureView
-                    : textureResources[sourceTexture],
+                Texture = texture,
                 Bounds = bounds,
                 Time = time,
                 DeltaTime = deltaTime,
@@ -478,6 +541,109 @@ namespace ForzaOSD.App
                 Sampler = sampler,
             };
             return id;
+        }
+
+        internal EffectLayerRegistration RegisterEffectLayer(
+            CustomShaderProgram program,
+            Vector4 bounds,
+            float time,
+            float deltaTime,
+            ReadOnlySpan<float> parameters,
+            ShaderSampler sampler
+        )
+        {
+            var width = Math.Clamp((int)Math.Ceiling(bounds.Z), 1, 4096);
+            var height = Math.Clamp((int)Math.Ceiling(bounds.W), 1, 4096);
+            var target = AcquireEffectLayerTarget(width, height);
+            var id = new IntPtr(nextEffectLayerId++);
+            effectLayerDraws[id] = new() { Id = id, Bounds = bounds, Target = target };
+            var textureId = RegisterCustomShaderDraw(
+                program,
+                target.View,
+                bounds,
+                time,
+                deltaTime,
+                parameters,
+                sampler
+            );
+            return new(id, textureId);
+        }
+
+        EffectLayerTarget AcquireEffectLayerTarget(int width, int height)
+        {
+            var target = effectLayerTargets
+                .Where(item => !item.InUse && item.Width >= width && item.Height >= height)
+                .OrderBy(item => (long)item.Width * item.Height)
+                .FirstOrDefault();
+            if (target == null)
+            {
+                var description = new Texture2DDescription
+                {
+                    Width = (uint)width,
+                    Height = (uint)height,
+                    MipLevels = 1,
+                    ArraySize = 1,
+                    Format = Format.R8G8B8A8_UNorm,
+                    SampleDescription = SampleDescription.Default,
+                    Usage = ResourceUsage.Default,
+                    BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
+                    CPUAccessFlags = CpuAccessFlags.None,
+                };
+                var texture = device.CreateTexture2D(description);
+                target = new(
+                    texture,
+                    device.CreateRenderTargetView(texture),
+                    device.CreateShaderResourceView(texture),
+                    width,
+                    height
+                );
+                effectLayerTargets.Add(target);
+            }
+            target.InUse = true;
+            target.LastUsedFrame = effectFrame;
+            return target;
+        }
+
+        void BeginEffectLayer(ID3D11DeviceContext ctx, EffectLayerDraw layer)
+        {
+            ctx.PSSetShaderResources(0, [null]);
+            ctx.OMSetRenderTargets(layer.Target.RenderTarget);
+            ctx.ClearRenderTargetView(layer.Target.RenderTarget, new Color4(0, 0, 0, 0));
+            ctx.RSSetViewports(
+                [
+                    new Viewport
+                    {
+                        Width = layer.Target.Width,
+                        Height = layer.Target.Height,
+                        MinDepth = 0,
+                        MaxDepth = 1,
+                    },
+                ]
+            );
+            UpdateProjection(
+                ctx,
+                layer.Bounds.X,
+                layer.Bounds.X + layer.Bounds.Z,
+                layer.Bounds.Y,
+                layer.Bounds.Y + layer.Bounds.W
+            );
+        }
+
+        void EndFrameEffects()
+        {
+            customShaderDraws.Clear();
+            effectLayerDraws.Clear();
+            effectFrame++;
+            foreach (var target in effectLayerTargets)
+                target.InUse = false;
+            for (var i = effectLayerTargets.Count - 1; i >= 0; i--)
+            {
+                var target = effectLayerTargets[i];
+                if (effectLayerTargets.Count <= 8 || effectFrame - target.LastUsedFrame <= 120)
+                    continue;
+                target.Dispose();
+                effectLayerTargets.RemoveAt(i);
+            }
         }
 
         void CreateDeviceObjects()
@@ -676,7 +842,11 @@ namespace ForzaOSD.App
         {
             foreach (var texture in fileTextures.Values)
                 texture.Dispose();
+            foreach (var target in effectLayerTargets)
+                target.Dispose();
             fileTextures.Clear();
+            effectLayerTargets.Clear();
+            effectLayerDraws.Clear();
             customShaderDraws.Clear();
             ReleaseAndNullify(ref fontSampler);
             ReleaseAndNullify(ref customClampSampler);
@@ -752,6 +922,42 @@ namespace ForzaOSD.App
             internal float[] Parameters;
             internal ShaderSampler Sampler;
         }
+
+        sealed class EffectLayerDraw
+        {
+            internal IntPtr Id;
+            internal Vector4 Bounds;
+            internal EffectLayerTarget Target;
+        }
+
+        sealed class EffectLayerTarget(
+            ID3D11Texture2D texture,
+            ID3D11RenderTargetView renderTarget,
+            ID3D11ShaderResourceView view,
+            int width,
+            int height
+        ) : IDisposable
+        {
+            internal ID3D11Texture2D Texture { get; } = texture;
+            internal ID3D11RenderTargetView RenderTarget { get; } = renderTarget;
+            internal ID3D11ShaderResourceView View { get; } = view;
+            internal int Width { get; } = width;
+            internal int Height { get; } = height;
+            internal bool InUse;
+            internal long LastUsedFrame;
+
+            public void Dispose()
+            {
+                View.Dispose();
+                RenderTarget.Dispose();
+                Texture.Dispose();
+            }
+        }
+
+        internal readonly record struct EffectLayerRegistration(
+            IntPtr LayerId,
+            IntPtr TextureId
+        );
 
         ID3D11SamplerState SamplerFor(ShaderSampler sampler) =>
             sampler switch

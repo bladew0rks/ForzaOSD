@@ -16,7 +16,7 @@ internal static unsafe class CustomShaderCompiler
         {
             float4 viewport; // width, height, inverse width, inverse height
             float4 bounds;   // screen x, screen y, width, height
-            float4 frame;    // elapsed seconds, frame delta seconds, reserved, reserved
+            float4 frame;    // elapsed seconds, frame delta seconds, screen offset x/y
             float4 params0;
             float4 params1;
             float4 params2;
@@ -47,7 +47,7 @@ internal static unsafe class CustomShaderCompiler
             ForzaOSDInput effect_input;
             effect_input.uv = input.uv;
             effect_input.color = input.color;
-            effect_input.screen_position = input.position.xy;
+            effect_input.screen_position = input.position.xy + frame.zw;
             effect_input.local_position = (input.position.xy - bounds.xy) / max(bounds.zw, float2(0.0001, 0.0001));
             return effect(effect_input);
         }
