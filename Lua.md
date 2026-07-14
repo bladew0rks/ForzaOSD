@@ -256,23 +256,63 @@ later commands can cover earlier commands.
 | `rpm` | number | RPM | Current engine speed. |
 | `max_rpm` | number | RPM | Engine maximum supplied by Forza. |
 | `idle_rpm` | number | RPM | Engine idle speed supplied by Forza. |
+| `acceleration_x`, `acceleration_y`, `acceleration_z` | number | m/s² | Local acceleration; X is right, Y is up, and Z is forward. |
+| `velocity_x`, `velocity_y`, `velocity_z` | number | m/s | Local velocity on the right, up, and forward axes. |
+| `angular_velocity_x`, `angular_velocity_y`, `angular_velocity_z` | number | rad/s | Local pitch, yaw, and roll rates. |
+| `yaw`, `pitch`, `roll` | number | radians | Car orientation in world space. |
 | `car_ordinal` | number | | Forza car make/model identifier. |
+| `car_class` | number | `0..7` | Raw performance-class identifier. |
+| `car_performance_index` | number | normally `100..999` | Performance index supplied by Forza. |
+| `drivetrain_type` | number | `0..2` | `0` is FWD, `1` is RWD, and `2` is AWD. |
+| `num_cylinders` | number | | Engine cylinder count. |
+| `car_group` | number | | FH6 car-group identifier; zero for Motorsport packets. |
+| `smashable_velocity_difference` | number | m/s | Velocity lost in the latest smashable-object collision; zero for Motorsport packets. |
+| `smashable_mass` | number | kg | Mass of the recently hit smashable object; zero for Motorsport packets. |
+| `position_x`, `position_y`, `position_z` | number | meters | Car position in world space. |
+| `power_watts` | number | watts | Instantaneous engine power. Negative values are valid. |
+| `torque_nm` | number | N·m | Instantaneous engine torque. |
 | `gear` | number | | Raw gear. `0` is reverse, `11` is neutral, and forward gears use their displayed number. |
 | `gear_label` | string | | `"R"`, `"N"`, or the decimal raw gear value. |
 | `throttle` | number | `0..1` | Accelerator input. |
 | `brake` | number | `0..1` | Brake input. |
+| `clutch` | number | `0..1` | Clutch input. |
 | `handbrake` | boolean | | Handbrake input. |
 | `steering` | number | `-1..1` | Normalized steering input. |
+| `steering_raw` | number | `-128..127` | Signed steering byte before normalization. |
+| `driving_line` | number | `-1..1` | Normalized driving-line position. |
+| `driving_line_raw` | number | `-128..127` | Signed driving-line byte before normalization. |
+| `ai_brake_difference` | number | `-1..1` | Normalized AI braking difference. |
+| `ai_brake_difference_raw` | number | `-128..127` | Signed AI-braking byte before normalization. |
 | `fuel` | number | normally `0..1` | Fuel level. |
 | `boost` | number | PSI | Pressure relative to atmosphere. Negative values are manifold vacuum and can fall below `-10`. |
 | `tire_temp_front_left` | number | °F | Raw tire temperature. |
 | `tire_temp_front_right` | number | °F | Raw tire temperature. |
 | `tire_temp_rear_left` | number | °F | Raw tire temperature. |
 | `tire_temp_rear_right` | number | °F | Raw tire temperature. |
+| `distance_traveled_m` | number | meters | Total distance traveled. |
+| `best_lap_seconds` | number | seconds | Game-supplied best lap, or zero when unavailable. |
+| `last_lap_seconds` | number | seconds | Game-supplied last lap, or zero when unavailable. |
+| `current_lap_seconds` | number | seconds | Current lap clock, or zero when not timing a lap. |
+| `race_time_seconds` | number | seconds | Total race time reported by the game. |
 | `lap_number` | number | completed laps | Raw unsigned lap counter. |
 | `race_position` | number | | Raw race-position byte. |
 | `lateral_g` | number | g | Local X acceleration divided by standard gravity; positive is right. |
 | `longitudinal_g` | number | g | Local Z acceleration divided by standard gravity; positive is forward. |
+
+The following four-corner fields use the suffixes `front_left`, `front_right`,
+`rear_left`, and `rear_right`:
+
+| Field prefix | Type | Unit or range | Meaning |
+| --- | --- | --- | --- |
+| `normalized_suspension_travel_` | number | normally `0..1` | `0` is maximum stretch and `1` is maximum compression. |
+| `tire_slip_ratio_` | number | normalized | Longitudinal slip; an absolute value above `1` means loss of grip. |
+| `wheel_rotation_speed_` | number | rad/s | Signed wheel rotation speed. |
+| `wheel_on_rumble_strip_` | boolean | | Whether the wheel is on a rumble strip. |
+| `wheel_in_puddle_` | boolean | | Whether the wheel is in a puddle. |
+| `surface_rumble_` | number | non-dimensional | Surface feedback value used by controller force feedback. |
+| `tire_slip_angle_` | number | normalized | Lateral slip; an absolute value above `1` means loss of grip. |
+| `tire_combined_slip_` | number | normalized | Combined tire slip; an absolute value above `1` means loss of grip. |
+| `suspension_travel_meters_` | number | meters | Actual suspension travel. |
 
 When no packet is available, numeric fields are zero except `gear`, which is `11`,
 and `gear_label`, which is `"N"`. A stale snapshot retains the last decoded frame;
@@ -282,8 +322,10 @@ ForzaOSD rejects malformed core fields and replaces non-finite optional values
 with zero. Optional values are not otherwise clamped. Clamp presentation values
 before using them as dimensions, ratios, or array indices.
 
-Speed and RPM are the latest packet values. The runtime does not smooth or
-interpolate them. Gear and other discrete state also use the latest raw packet.
+All telemetry fields are the latest packet values. The runtime does not smooth
+or interpolate them. The game can retain lap values after an event, so use
+`race_on`, `fresh`, and `current_lap_seconds` when detecting an actively timed
+lap. FH6 does not provide tire wear or an ABS-active flag in this format.
 
 ### Audio fields
 

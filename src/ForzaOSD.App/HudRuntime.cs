@@ -417,34 +417,7 @@ internal sealed unsafe class HudRuntime : IDisposable
             return false;
         }
         l.NewTable();
-        l.NewTable();
-        var f = t.Frame;
-        Set(l, "available", t.HasFrame);
-        Set(l, "fresh", !t.Stale);
-        Set(l, "race_on", f.RaceOn);
-        Set(l, "speed_mps", f.SpeedMps);
-        Set(l, "speed_kph", f.SpeedMps * 3.6);
-        Set(l, "speed_mph", f.SpeedMps * 2.2369363);
-        Set(l, "rpm", f.EngineRpm);
-        Set(l, "max_rpm", f.EngineMaxRpm);
-        Set(l, "idle_rpm", f.EngineIdleRpm);
-        Set(l, "car_ordinal", f.CarOrdinal);
-        Set(l, "gear", t.HasFrame ? f.Gear : 11);
-        Set(l, "gear_label", GearFormatter.Format(t.HasFrame ? f.Gear : (byte)11));
-        Set(l, "throttle", f.Throttle);
-        Set(l, "brake", f.Brake);
-        Set(l, "handbrake", f.Handbrake);
-        Set(l, "steering", f.Steering);
-        Set(l, "fuel", f.Fuel);
-        Set(l, "boost", f.Boost);
-        Set(l, "tire_temp_front_left", f.TireTempFrontLeft);
-        Set(l, "tire_temp_front_right", f.TireTempFrontRight);
-        Set(l, "tire_temp_rear_left", f.TireTempRearLeft);
-        Set(l, "tire_temp_rear_right", f.TireTempRearRight);
-        Set(l, "lap_number", f.LapNumber);
-        Set(l, "race_position", f.RacePosition);
-        Set(l, "lateral_g", f.LateralG);
-        Set(l, "longitudinal_g", f.LongitudinalG);
+        PushTelemetry(l, t);
         l.SetField(-2, "telemetry");
         l.NewTable();
         Set(l, "enabled", audio.Enabled);
@@ -489,6 +462,125 @@ internal sealed unsafe class HudRuntime : IDisposable
         }
         l.Pop(1);
         return true;
+    }
+
+    internal static void PushTelemetry(Lua l, TelemetrySnapshot t)
+    {
+        l.NewTable();
+        var f = t.Frame;
+        Set(l, "available", t.HasFrame);
+        Set(l, "fresh", !t.Stale);
+        Set(l, "race_on", f.RaceOn);
+        Set(l, "rpm", f.EngineRpm);
+        Set(l, "max_rpm", f.EngineMaxRpm);
+        Set(l, "idle_rpm", f.EngineIdleRpm);
+        Set(l, "acceleration_x", f.AccelerationX);
+        Set(l, "acceleration_y", f.AccelerationY);
+        Set(l, "acceleration_z", f.AccelerationZ);
+        Set(l, "velocity_x", f.VelocityX);
+        Set(l, "velocity_y", f.VelocityY);
+        Set(l, "velocity_z", f.VelocityZ);
+        Set(l, "angular_velocity_x", f.AngularVelocityX);
+        Set(l, "angular_velocity_y", f.AngularVelocityY);
+        Set(l, "angular_velocity_z", f.AngularVelocityZ);
+        Set(l, "yaw", f.Yaw);
+        Set(l, "pitch", f.Pitch);
+        Set(l, "roll", f.Roll);
+        Set(
+            l,
+            "normalized_suspension_travel_front_left",
+            f.NormalizedSuspensionTravelFrontLeft
+        );
+        Set(
+            l,
+            "normalized_suspension_travel_front_right",
+            f.NormalizedSuspensionTravelFrontRight
+        );
+        Set(
+            l,
+            "normalized_suspension_travel_rear_left",
+            f.NormalizedSuspensionTravelRearLeft
+        );
+        Set(
+            l,
+            "normalized_suspension_travel_rear_right",
+            f.NormalizedSuspensionTravelRearRight
+        );
+        Set(l, "tire_slip_ratio_front_left", f.TireSlipRatioFrontLeft);
+        Set(l, "tire_slip_ratio_front_right", f.TireSlipRatioFrontRight);
+        Set(l, "tire_slip_ratio_rear_left", f.TireSlipRatioRearLeft);
+        Set(l, "tire_slip_ratio_rear_right", f.TireSlipRatioRearRight);
+        Set(l, "wheel_rotation_speed_front_left", f.WheelRotationSpeedFrontLeft);
+        Set(l, "wheel_rotation_speed_front_right", f.WheelRotationSpeedFrontRight);
+        Set(l, "wheel_rotation_speed_rear_left", f.WheelRotationSpeedRearLeft);
+        Set(l, "wheel_rotation_speed_rear_right", f.WheelRotationSpeedRearRight);
+        Set(l, "wheel_on_rumble_strip_front_left", f.WheelOnRumbleStripFrontLeft);
+        Set(l, "wheel_on_rumble_strip_front_right", f.WheelOnRumbleStripFrontRight);
+        Set(l, "wheel_on_rumble_strip_rear_left", f.WheelOnRumbleStripRearLeft);
+        Set(l, "wheel_on_rumble_strip_rear_right", f.WheelOnRumbleStripRearRight);
+        Set(l, "wheel_in_puddle_front_left", f.WheelInPuddleFrontLeft);
+        Set(l, "wheel_in_puddle_front_right", f.WheelInPuddleFrontRight);
+        Set(l, "wheel_in_puddle_rear_left", f.WheelInPuddleRearLeft);
+        Set(l, "wheel_in_puddle_rear_right", f.WheelInPuddleRearRight);
+        Set(l, "surface_rumble_front_left", f.SurfaceRumbleFrontLeft);
+        Set(l, "surface_rumble_front_right", f.SurfaceRumbleFrontRight);
+        Set(l, "surface_rumble_rear_left", f.SurfaceRumbleRearLeft);
+        Set(l, "surface_rumble_rear_right", f.SurfaceRumbleRearRight);
+        Set(l, "tire_slip_angle_front_left", f.TireSlipAngleFrontLeft);
+        Set(l, "tire_slip_angle_front_right", f.TireSlipAngleFrontRight);
+        Set(l, "tire_slip_angle_rear_left", f.TireSlipAngleRearLeft);
+        Set(l, "tire_slip_angle_rear_right", f.TireSlipAngleRearRight);
+        Set(l, "tire_combined_slip_front_left", f.TireCombinedSlipFrontLeft);
+        Set(l, "tire_combined_slip_front_right", f.TireCombinedSlipFrontRight);
+        Set(l, "tire_combined_slip_rear_left", f.TireCombinedSlipRearLeft);
+        Set(l, "tire_combined_slip_rear_right", f.TireCombinedSlipRearRight);
+        Set(l, "suspension_travel_meters_front_left", f.SuspensionTravelMetersFrontLeft);
+        Set(l, "suspension_travel_meters_front_right", f.SuspensionTravelMetersFrontRight);
+        Set(l, "suspension_travel_meters_rear_left", f.SuspensionTravelMetersRearLeft);
+        Set(l, "suspension_travel_meters_rear_right", f.SuspensionTravelMetersRearRight);
+        Set(l, "car_ordinal", f.CarOrdinal);
+        Set(l, "car_class", f.CarClass);
+        Set(l, "car_performance_index", f.CarPerformanceIndex);
+        Set(l, "drivetrain_type", f.DrivetrainType);
+        Set(l, "num_cylinders", f.NumCylinders);
+        Set(l, "car_group", f.CarGroup);
+        Set(l, "smashable_velocity_difference", f.SmashableVelocityDifference);
+        Set(l, "smashable_mass", f.SmashableMass);
+        Set(l, "position_x", f.PositionX);
+        Set(l, "position_y", f.PositionY);
+        Set(l, "position_z", f.PositionZ);
+        Set(l, "speed_mps", f.SpeedMps);
+        Set(l, "speed_kph", f.SpeedMps * 3.6);
+        Set(l, "speed_mph", f.SpeedMps * 2.2369363);
+        Set(l, "power_watts", f.PowerWatts);
+        Set(l, "torque_nm", f.TorqueNm);
+        Set(l, "tire_temp_front_left", f.TireTempFrontLeft);
+        Set(l, "tire_temp_front_right", f.TireTempFrontRight);
+        Set(l, "tire_temp_rear_left", f.TireTempRearLeft);
+        Set(l, "tire_temp_rear_right", f.TireTempRearRight);
+        Set(l, "boost", f.Boost);
+        Set(l, "fuel", f.Fuel);
+        Set(l, "distance_traveled_m", f.DistanceTraveledMeters);
+        Set(l, "best_lap_seconds", f.BestLapSeconds);
+        Set(l, "last_lap_seconds", f.LastLapSeconds);
+        Set(l, "current_lap_seconds", f.CurrentLapSeconds);
+        Set(l, "race_time_seconds", f.RaceTimeSeconds);
+        Set(l, "lap_number", f.LapNumber);
+        Set(l, "race_position", f.RacePosition);
+        Set(l, "gear", t.HasFrame ? f.Gear : 11);
+        Set(l, "gear_label", GearFormatter.Format(t.HasFrame ? f.Gear : (byte)11));
+        Set(l, "throttle", f.Throttle);
+        Set(l, "brake", f.Brake);
+        Set(l, "clutch", f.Clutch);
+        Set(l, "handbrake", f.Handbrake);
+        Set(l, "steering_raw", f.SteeringRaw);
+        Set(l, "steering", f.Steering);
+        Set(l, "driving_line_raw", f.DrivingLineRaw);
+        Set(l, "driving_line", f.DrivingLine);
+        Set(l, "ai_brake_difference_raw", f.AiBrakeDifferenceRaw);
+        Set(l, "ai_brake_difference", f.AiBrakeDifference);
+        Set(l, "lateral_g", f.LateralG);
+        Set(l, "longitudinal_g", f.LongitudinalG);
     }
 
     private static int DrawCallback(Profile p, CommandType type, nint state)
