@@ -18,7 +18,9 @@ internal sealed class OverlayHost : IDisposable
     private nint gameWindow;
     private long nextGameWindowSearch;
     private bool running = true,
-        editMode;
+        editMode,
+        overlayVisible;
+    private NativeMethods.Rect overlayBounds;
     private string gameWindowTitle = "";
     private string status;
     private D3D11Host? graphics;
@@ -197,6 +199,7 @@ internal sealed class OverlayHost : IDisposable
             : ex | NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_NOACTIVATE;
         NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, (nint)ex);
         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOWNOACTIVATE);
+        overlayVisible = true;
         NativeMethods.SetWindowPos(
             hwnd,
             NativeMethods.HWND_TOPMOST,
@@ -266,7 +269,7 @@ internal sealed class OverlayHost : IDisposable
         {
             if (!editMode)
             {
-                NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+                HideOverlay();
                 return false;
             }
             NativeMethods.SystemParametersInfo(NativeMethods.SPI_GETWORKAREA, 0, out r, 0);
@@ -293,20 +296,39 @@ internal sealed class OverlayHost : IDisposable
             && !editMode
         )
         {
-            NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+            HideOverlay();
             return false;
         }
-        NativeMethods.SetWindowPos(
-            hwnd,
-            NativeMethods.HWND_TOPMOST,
-            r.Left,
-            r.Top,
-            r.Right - r.Left,
-            r.Bottom - r.Top,
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW
-        );
+        if (!overlayVisible || !SameBounds(r, overlayBounds))
+        {
+            NativeMethods.SetWindowPos(
+                hwnd,
+                NativeMethods.HWND_TOPMOST,
+                r.Left,
+                r.Top,
+                r.Right - r.Left,
+                r.Bottom - r.Top,
+                NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW
+            );
+            overlayBounds = r;
+            overlayVisible = true;
+        }
         return true;
     }
+
+    private void HideOverlay()
+    {
+        if (!overlayVisible)
+            return;
+        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+        overlayVisible = false;
+    }
+
+    private static bool SameBounds(NativeMethods.Rect left, NativeMethods.Rect right) =>
+        left.Left == right.Left
+        && left.Top == right.Top
+        && left.Right == right.Right
+        && left.Bottom == right.Bottom;
 
     private void CreateTrayIcon()
     {
