@@ -78,7 +78,8 @@ internal sealed class D3D11Host : IDisposable
     private readonly bool[] keyboardState = new bool[256];
     private bool ctrlDown,
         shiftDown,
-        altDown;
+        altDown,
+        capturingInput;
     internal int Width { get; private set; }
     internal int Height { get; private set; }
     internal ID3D11Device Device => device;
@@ -141,15 +142,41 @@ internal sealed class D3D11Host : IDisposable
         target = device.CreateRenderTargetView(buffer);
     }
 
-    internal void NewFrame(float delta)
+    internal void NewFrame(float delta, bool captureInput)
     {
         var io = ImGui.GetIO();
         io.DisplaySize = new Vector2(Width, Height);
         io.DeltaTime = delta;
-        PollKeyboard();
-        if (NativeMethods.GetCursorPos(out var p) && NativeMethods.ScreenToClient(hwnd, ref p))
-            io.AddMousePosEvent(p.X, p.Y);
+        if (captureInput)
+        {
+            PollKeyboard();
+            if (NativeMethods.GetCursorPos(out var p) && NativeMethods.ScreenToClient(hwnd, ref p))
+                io.AddMousePosEvent(p.X, p.Y);
+        }
+        else if (capturingInput)
+        {
+            ReleaseInput(io);
+        }
+        capturingInput = captureInput;
         ImGui.NewFrame();
+    }
+
+    private void ReleaseInput(ImGuiIOPtr io)
+    {
+        foreach (var (virtualKey, key) in KeyboardMap)
+        {
+            if (!keyboardState[virtualKey])
+                continue;
+            keyboardState[virtualKey] = false;
+            io.AddKeyEvent(key, false);
+        }
+        SetModifier(io, ImGuiKey.ModCtrl, false, ref ctrlDown);
+        SetModifier(io, ImGuiKey.ModShift, false, ref shiftDown);
+        SetModifier(io, ImGuiKey.ModAlt, false, ref altDown);
+        io.AddMouseButtonEvent(0, false);
+        io.AddMouseButtonEvent(1, false);
+        io.AddMouseButtonEvent(2, false);
+        io.AddMousePosEvent(-float.MaxValue, -float.MaxValue);
     }
 
     internal bool ProcessMessage(uint message, nuint wp, nint lp)
