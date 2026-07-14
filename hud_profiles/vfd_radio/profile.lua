@@ -76,12 +76,27 @@ local function display_track(audio)
   return string.upper(artist .. "  /  " .. title)
 end
 
+local marquee_text = ""
+local marquee_started = 0
+
+local function display_width(text)
+  local width = 0
+  for _, codepoint in utf8.codes(text) do
+    width = width + (codepoint == 32 and 6.8 or 27.744)
+  end
+  return width
+end
+
 local function draw_marquee(draw, text, settings, palette, alpha, bloom, time)
   local clip_x, clip_y, clip_w, clip_h = 22, 36, 856, 54
-  local glyphs = utf8.len(text) or #text
-  local estimated_width = glyphs * 19
+  local text_width = display_width(text)
 
-  if estimated_width <= clip_w - 8 then
+  if text ~= marquee_text then
+    marquee_text = text
+    marquee_started = time
+  end
+
+  if text_width <= clip_w - 8 then
     phosphor_text(draw, {
       font = "display",
       text = text,
@@ -96,9 +111,10 @@ local function draw_marquee(draw, text, settings, palette, alpha, bloom, time)
     return
   end
 
-  local gap = 150
-  local cycle = estimated_width + gap
-  local offset = (time * settings.marquee_speed) % cycle
+  local gap = 64
+  local cycle = text_width + gap
+  local elapsed = math.max(0, time - marquee_started)
+  local offset = math.max(0, elapsed - 1.25) * settings.marquee_speed % cycle
   for copy = 0, 1 do
     phosphor_text(draw, {
       font = "display",
@@ -231,7 +247,7 @@ return {
   id = "forzaosd.vfd_radio",
   name = "VFD Radio",
   author = "ForzaOSD",
-  version = "1.1.0",
+  version = "1.1.1",
   role = "module",
   visibility = "audio",
   asset_root = "assets",
