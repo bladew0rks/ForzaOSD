@@ -96,6 +96,7 @@ public sealed class LuaProfileTests
 
             const string preview = """
                 local function noop(_) end
+                local function layer(_, render) render() end
                 local draw = {
                   rect = noop,
                   gradient = noop,
@@ -105,6 +106,7 @@ public sealed class LuaProfileTests
                   text = noop,
                   image = noop,
                   shader = noop,
+                  layer = layer,
                   set_offset = noop,
                 }
                 local settings = {}

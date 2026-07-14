@@ -212,7 +212,7 @@ The injected globals are:
 | `source_texture`, `source_sampler` | Optional declared asset at `t0` and sampler at `s0`; the texture is solid white when no asset is supplied. |
 | `viewport` | Width, height, inverse width, inverse height. |
 | `bounds` | Command screen X, Y, width, and height. |
-| `frame` | Elapsed time and frame delta in `.x` and `.y`; `.z` and `.w` are reserved. |
+| `frame` | Elapsed time and frame delta in `.x` and `.y`; `.zw` is the screen-origin offset used while rendering an effect layer. |
 | `params0` ... `params3` | Up to 16 Lua parameters, packed four per vector. Missing values are zero. |
 
 Render the effect with `draw.shader`:
@@ -230,20 +230,66 @@ draw.shader {
 ```
 
 `shader` must name a declared shader. `asset` is optional but, when present, must
-name a declared image. `sampler` is `"clamp"` by default and also accepts `"wrap"`.
+name a declared image. `sampler` is `"clamp"` by default and also accepts `"wrap"`
+and transparent `"border"` sampling.
 `params` accepts at most 16 finite numbers. Telemetry and settings are deliberately
 passed through Lua rather than exposed as a second implicit shader interface.
 
 Shader commands support the image UV, rotation, pivot, color, alpha, coordinate
 space, and clipping fields. They use the normal straight-alpha blend state. Glow
-fields, extra textures, compute shaders, UAVs, arbitrary constant buffers,
-multi-pass effects, and whole-overlay post-processing are not supported.
+fields, extra textures, compute shaders, UAVs, arbitrary constant buffers, and
+multi-pass effects are not supported.
 
 Sources compile as `ps_4_0` when the profile loads. They must use the `.hlsl`
 extension, cannot escape their profile directory, cannot use `#include`, and are
 limited to 256 KiB. Compiler diagnostics include the shader filename and source
 line. The bundled `Shader telemetry grid (demo)` module is disabled by default and
 shows a procedural, telemetry-driven example.
+
+### Effect layers
+
+`draw.layer` renders ordinary draw commands into a pooled offscreen texture, runs
+that texture through a declared shader, and composites the result at the same
+point in the HUD's draw order:
+
+```lua
+draw.layer({
+  shader = "glass",
+  x = 20, y = 40, w = 400, h = 160,
+  margin = 12,
+  sampler = "border",
+  alpha = ctx.opacity,
+  params = { ctx.telemetry.rpm, ctx.telemetry.throttle },
+}, function()
+  draw.rect { x = 20, y = 40, w = 400, h = 160, color = "#071315" }
+  draw.text { x = 220, y = 100, align = "center", text = "LAYERED" }
+  draw.image { asset = "needle", x = 200, y = 60, w = 40, h = 120 }
+end)
+```
+
+Commands inside the function retain their normal profile or screen coordinates;
+they are clipped to the layer's expanded capture area. `margin` expands every side
+of that area so blur, bloom, distortion, and chromatic offsets have room beyond
+the nominal bounds. It defaults to `0` and is limited to `512` profile units.
+
+The layer options accept the same `shader`, `sampler`, `params`, `color`, `alpha`,
+and coordinate-space fields as `draw.shader`. The color and alpha apply when the
+finished layer is composited, so avoid applying `ctx.opacity` both to every inner
+command and to the layer unless the multiplied result is intentional.
+
+Offscreen drawing uses alpha blending, so `source_texture` contains premultiplied
+RGB. Effects that need straight RGB should unpremultiply each sample:
+
+```hlsl
+float4 sample = source_texture.Sample(source_sampler, input.uv);
+sample.rgb /= max(sample.a, 0.0001);
+```
+
+Layers cannot be nested. A profile may emit at most 16 layers per frame. Render
+targets are reused by pixel dimensions and capped at 4096 pixels per axis; larger
+logical layers render at reduced resolution. Each layer adds an offscreen draw
+pass plus its shader pass, so tightly bound the layer and avoid wrapping an entire
+4K viewport when only one instrument needs an effect.
 
 ## Settings schema
 
@@ -456,6 +502,7 @@ All drawable commands accept these common fields:
 | `draw.text` | `x`, `y` default to `0`; `size` defaults to `24` | `font` and `text` default to `""`; `align` defaults to `"left"`; `shadow` defaults to `false`. |
 | `draw.image` | `x`, `y`, `w`, `h` default to `0` | `asset` defaults to `""`; `rotation` defaults to `0`; see the UV and pivot fields below. |
 | `draw.shader` | `x`, `y`, `w`, `h` default to `0` | Requires `shader`; optional `asset`, `params`, and `sampler`; supports image UV and pivot fields. |
+| `draw.layer` | `x`, `y`, `w`, `h` must form positive bounds | Requires `shader` and a second render-function argument; optional `margin`, `params`, and `sampler`. |
 | `draw.set_offset` | `x`, `y` default to `0` | This is profile state, not a queued drawable command. |
 
 `draw.gradient` uses `color` at the start, `color2` at the midpoint, and `color3`
@@ -513,8 +560,9 @@ glow_color = "#38ffe8"
 
 Glow is disabled unless both radius and intensity are greater than zero.
 `glow_color` defaults to white, not to `color`. Rectangles, outlines, lines,
-circles, and text use layered ImGui primitives. Unrotated images use the DX11
-bloom shader. Rotated images do not render an image bloom pass.
+circles, and text use layered ImGui primitives. Unrotated images use the external
+custom shader in `Shaders/bloom.hlsl`; this follows the same compiler and renderer
+path as profile shaders. Rotated images do not render an image bloom pass.
 
 Intensity is clamped internally for primitive falloff. Each glowing command emits
 additional geometry or shader work; avoid applying glow to large numbers of
