@@ -114,6 +114,7 @@ internal sealed class OverlayHost : IDisposable
             var telemetrySnapshot = telemetry.Snapshot;
             audio.PollMediaControls(config.Audio, telemetrySnapshot.IsDriving);
             var now = timer.Elapsed.TotalSeconds;
+            hud.ReloadChangedProfiles();
             graphics.NewFrame((float)Math.Clamp(now - previous, .001, .1), editMode);
             previous = now;
             var actions = hud.Render(

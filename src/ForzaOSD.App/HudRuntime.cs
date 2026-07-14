@@ -216,7 +216,6 @@ internal sealed unsafe class HudRuntime : IDisposable
         int height
     )
     {
-        PollReload();
         Profile? configured = null,
             native = null,
             firstHud = null;
@@ -1171,7 +1170,7 @@ internal sealed unsafe class HudRuntime : IDisposable
         return fallback;
     }
 
-    private void PollReload()
+    internal void ReloadChangedProfiles()
     {
         var now = Environment.TickCount64;
         if (now - lastPoll < 250)
