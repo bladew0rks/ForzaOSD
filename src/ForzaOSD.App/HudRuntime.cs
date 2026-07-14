@@ -216,11 +216,24 @@ internal sealed unsafe class HudRuntime : IDisposable
     )
     {
         PollReload();
-        var configured = profiles.FirstOrDefault(p => p.Id == config.HudProfile && p.Valid);
+        Profile? configured = null,
+            native = null,
+            firstHud = null;
+        foreach (var profile in profiles)
+        {
+            if (!profile.Valid)
+                continue;
+            if (profile.Id == config.HudProfile)
+                configured = profile;
+            if (profile.Role != "hud")
+                continue;
+            firstHud ??= profile;
+            if (profile.Id == "native")
+                native = profile;
+        }
         var primary = configured is { Role: "hud" }
             ? configured
-            : profiles.FirstOrDefault(p => p.Valid && p.Role == "hud" && p.Id == "native")
-                ?? profiles.First(p => p.Valid && p.Role == "hud");
+            : native ?? firstHud ?? throw new InvalidOperationException("No valid HUD profile");
 
         if (configured is { Role: "module" })
         {
@@ -232,20 +245,15 @@ internal sealed unsafe class HudRuntime : IDisposable
             config.HudProfile = primary.Id;
         }
 
-        var modules = profiles
-            .Where(p => p.Valid && p.Role == "module" && IsModuleEnabled(config, p.Id))
-            .ToArray();
-        var activeProfiles = new[] { primary }.Concat(modules);
         var audioSnapshot = audio.Snapshot;
-        foreach (var profile in activeProfiles)
-        {
-            EnsureSettings(config, profile);
-            var visible = profile.Visibility == "audio"
-                ? edit || audioSnapshot.Playing || audioSnapshot.Available
-                : telemetry.ShouldShow(edit);
-            if (visible && CallRender(profile, config, telemetry, audioSnapshot, edit))
-                Execute(profile, config, width, height, edit);
-        }
+        RenderProfile(primary, config, telemetry, audioSnapshot, edit, width, height);
+        foreach (var profile in profiles)
+            if (
+                profile.Valid
+                && profile.Role == "module"
+                && IsModuleEnabled(config, profile.Id)
+            )
+                RenderProfile(profile, config, telemetry, audioSnapshot, edit, width, height);
         if (!edit)
             return new();
         bool save = false,
@@ -333,6 +341,24 @@ internal sealed unsafe class HudRuntime : IDisposable
             quit = true;
         ImGui.End();
         return new(save, quit, restart, restartAudio);
+    }
+
+    private void RenderProfile(
+        Profile profile,
+        AppConfig config,
+        TelemetrySnapshot telemetry,
+        AudioSnapshot audio,
+        bool edit,
+        int width,
+        int height
+    )
+    {
+        EnsureSettings(config, profile);
+        var visible = profile.Visibility == "audio"
+            ? edit || audio.Playing || audio.Available
+            : telemetry.ShouldShow(edit);
+        if (visible && CallRender(profile, config, telemetry, audio, edit))
+            Execute(profile, config, width, height, edit);
     }
 
     private bool CallRender(
@@ -991,7 +1017,7 @@ internal sealed unsafe class HudRuntime : IDisposable
     }
 
     private static bool IsModuleEnabled(AppConfig config, string id) =>
-        config.HudModules.Any(module => module.Equals(id, StringComparison.Ordinal));
+        config.HudModules.Contains(id);
 
     private static void EnableModule(AppConfig config, string id, bool enabled)
     {
