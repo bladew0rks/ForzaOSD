@@ -58,6 +58,7 @@ public sealed class LuaProfileTests
         Assert.Contains("native", ids);
         Assert.Contains("forzaosd.vfd", ids);
         Assert.Contains("forzaosd.vfd_radio", ids);
+        Assert.Contains("forzaosd.tire_telemetry", ids);
     }
 
     [Fact]
@@ -146,6 +147,77 @@ public sealed class LuaProfileTests
                 $"{script} preview failed: {lua.ToString(-1)}"
             );
         }
+    }
+
+    [Fact]
+    public void TireTelemetryRendersEveryModeAndDetailState()
+    {
+        var script = Path.Combine(
+            FindRepositoryRoot(),
+            "hud_profiles",
+            "tire_telemetry",
+            "profile.lua"
+        );
+        using var lua = CreateSandbox();
+        Assert.Equal(LuaStatus.OK, lua.LoadFile(script));
+        Assert.Equal(LuaStatus.OK, lua.PCall(0, 1, 0));
+        lua.SetGlobal("profile");
+
+        const string preview = """
+            local function noop(_) end
+            local draw = {
+              rect = noop, gradient = noop, outline = noop, line = noop,
+              circle = noop, text = noop, image = noop, set_offset = noop,
+            }
+            local telemetry = setmetatable({
+              available = true, fresh = true, race_on = true,
+              tire_temp_front_left = 130, tire_temp_front_right = 180,
+              tire_temp_rear_left = 225, tire_temp_rear_right = 260,
+              tire_combined_slip_front_left = 0.5,
+              tire_combined_slip_front_right = 0.8,
+              tire_combined_slip_rear_left = 1.0,
+              tire_combined_slip_rear_right = 1.4,
+              wheel_in_puddle_front_left = true,
+              wheel_on_rumble_strip_rear_right = true,
+            }, { __index = function() return 0 end })
+            local modes = { "Combined", "Ratio", "Angle" }
+            local time = 1
+            for _, mode in ipairs(modes) do
+              for _, metric in ipairs({ true, false }) do
+                for _, details in ipairs({ true, false }) do
+                  profile.render({
+                    draw = draw,
+                    settings = {
+                      x = 0.16, y = 0.72, scale = 1,
+                      slip_mode = mode, show_details = details, show_contacts = true,
+                    },
+                    telemetry = telemetry,
+                    metric = metric,
+                    opacity = 1,
+                    time = time,
+                    edit_mode = false,
+                  })
+                  time = time + 0.016
+                end
+              end
+            end
+            telemetry.fresh = false
+            profile.render({
+              draw = draw,
+              settings = {
+                x = 0.16, y = 0.72, scale = 1,
+                slip_mode = "Combined", show_details = false, show_contacts = false,
+              },
+              telemetry = telemetry,
+              metric = true,
+              opacity = 0.5,
+              time = time + 1,
+              edit_mode = false,
+            })
+            """;
+        Assert.Equal(LuaStatus.OK, lua.LoadString(preview));
+        var result = lua.PCall(0, 0, 0);
+        Assert.True(result == LuaStatus.OK, lua.ToString(-1));
     }
 
     private static Lua CreateSandbox()
