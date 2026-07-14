@@ -307,8 +307,11 @@ internal sealed unsafe class HudRuntime : IDisposable
         var port = (int)config.UdpPort;
         if (ImGui.InputInt("UDP port", ref port))
             config.UdpPort = (ushort)Math.Clamp(port, 1, 65535);
+        var processName = config.GameProcessName;
+        if (ImGui.InputText("Game process", ref processName, 128))
+            config.GameProcessName = processName;
         var title = config.WindowTitle;
-        if (ImGui.InputText("Game window contains", ref title, 128))
+        if (ImGui.InputText("Window title contains (optional)", ref title, 128))
             config.WindowTitle = title;
         var foreground = config.ShowOnlyWhenForeground;
         if (ImGui.Checkbox("Only show over foreground game", ref foreground))

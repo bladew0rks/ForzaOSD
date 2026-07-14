@@ -19,6 +19,7 @@ public sealed class ConfigTests
                 HotkeyVk = 0x41,
                 HotkeyModifiers = 6,
                 MaxFps = 90,
+                GameProcessName = "ForzaHorizon6.exe",
             };
             source.Save(path);
             var loaded = AppConfig.Load(path).Config;
@@ -27,6 +28,7 @@ public sealed class ConfigTests
             Assert.Equal(0x41, loaded.HotkeyVk);
             Assert.Equal(6, loaded.HotkeyModifiers);
             Assert.Equal(90, loaded.MaxFps);
+            Assert.Equal("ForzaHorizon6", loaded.GameProcessName);
         }
         finally
         {
@@ -42,7 +44,7 @@ public sealed class ConfigTests
         {
             File.WriteAllText(path, "{\"version\":4,\"hotkey_vk\":121}");
             var loaded = AppConfig.Load(path).Config;
-            Assert.Equal(9, loaded.Version);
+            Assert.Equal(10, loaded.Version);
             Assert.Equal(0x1B, loaded.HotkeyVk);
             Assert.Equal(4, loaded.HotkeyModifiers);
         }

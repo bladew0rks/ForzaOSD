@@ -16,11 +16,13 @@ internal sealed class OverlayHost : IDisposable
     private readonly NativeMethods.WndProc wndProc;
     private nint hwnd;
     private nint gameWindow;
+    private uint gameProcessId;
     private long nextGameWindowSearch;
     private bool running = true,
         editMode,
         overlayVisible;
     private NativeMethods.Rect overlayBounds;
+    private string gameProcessName = "";
     private string gameWindowTitle = "";
     private string status;
     private D3D11Host? graphics;
@@ -216,9 +218,16 @@ internal sealed class OverlayHost : IDisposable
 
     private nint FindGameWindow()
     {
-        if (!gameWindowTitle.Equals(config.WindowTitle, StringComparison.Ordinal))
+        var configuredProcessName =
+            Path.GetFileNameWithoutExtension(config.GameProcessName.Trim()) ?? "";
+        if (
+            !gameProcessName.Equals(configuredProcessName, StringComparison.OrdinalIgnoreCase)
+            || !gameWindowTitle.Equals(config.WindowTitle, StringComparison.Ordinal)
+        )
         {
             gameWindow = 0;
+            gameProcessId = 0;
+            gameProcessName = configuredProcessName;
             gameWindowTitle = config.WindowTitle;
             nextGameWindowSearch = 0;
         }
@@ -226,39 +235,63 @@ internal sealed class OverlayHost : IDisposable
             gameWindow != 0
             && NativeMethods.IsWindow(gameWindow)
             && NativeMethods.IsWindowVisible(gameWindow)
+            && NativeMethods.GetWindowThreadProcessId(gameWindow, out var ownerProcessId) != 0
+            && ownerProcessId == gameProcessId
         )
             return gameWindow;
 
         gameWindow = 0;
+        gameProcessId = 0;
         var now = Environment.TickCount64;
         if (now < nextGameWindowSearch)
             return 0;
         nextGameWindowSearch = now + WindowSearchIntervalMs;
+        if (configuredProcessName.Length == 0)
+            return 0;
+
+        var processIds = new HashSet<uint>();
+        foreach (var process in Process.GetProcessesByName(configuredProcessName))
+        {
+            using (process)
+                processIds.Add((uint)process.Id);
+        }
+        if (processIds.Count == 0)
+            return 0;
 
         nint found = 0;
-        var text = new char[512];
+        uint foundProcessId = 0;
+        var titleFilter = config.WindowTitle.Trim();
+        var text = titleFilter.Length == 0 ? null : new char[512];
         NativeMethods.EnumWindows(
             (candidate, _) =>
             {
                 if (!NativeMethods.IsWindowVisible(candidate))
                     return true;
-                var len = NativeMethods.GetWindowText(candidate, text, text.Length);
                 if (
-                    len > 0
-                    && new string(text, 0, len).Contains(
-                        config.WindowTitle,
-                        StringComparison.OrdinalIgnoreCase
-                    )
+                    NativeMethods.GetWindowThreadProcessId(candidate, out var processId) == 0
+                    || !processIds.Contains(processId)
                 )
+                    return true;
+                if (text is not null)
                 {
-                    found = candidate;
-                    return false;
+                    var len = NativeMethods.GetWindowText(candidate, text, text.Length);
+                    if (
+                        len <= 0
+                        || !new string(text, 0, len).Contains(
+                            titleFilter,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                        return true;
                 }
-                return true;
+                found = candidate;
+                foundProcessId = processId;
+                return false;
             },
             0
         );
         gameWindow = found;
+        gameProcessId = foundProcessId;
         return gameWindow;
     }
 

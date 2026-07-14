@@ -1,8 +1,9 @@
 {
-  "version": 9,
+  "version": 10,
   "bind_address": "127.0.0.1",
   "udp_port": 5300,
   "window_title": "Forza Horizon 6",
+  "process_name": "forzahorizon6",
   "hotkey_vk": 27,
   "hotkey_modifiers": 4,
   "metric": true,

@@ -210,6 +210,9 @@ internal static partial class NativeMethods
     internal static partial bool IsWindowVisible(nint hwnd);
 
     [LibraryImport("user32.dll")]
+    internal static partial uint GetWindowThreadProcessId(nint hwnd, out uint processId);
+
+    [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsIconic(nint hwnd);
 
