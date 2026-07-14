@@ -194,13 +194,6 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool EnumWindows(EnumWindowsProc callback, nint param);
 
-    [LibraryImport(
-        "user32.dll",
-        EntryPoint = "GetWindowTextW",
-        StringMarshalling = StringMarshalling.Utf16
-    )]
-    internal static partial int GetWindowText(nint hwnd, [Out] char[] text, int count);
-
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindow(nint hwnd);

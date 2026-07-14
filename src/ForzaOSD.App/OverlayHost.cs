@@ -23,7 +23,6 @@ internal sealed class OverlayHost : IDisposable
         overlayVisible;
     private NativeMethods.Rect overlayBounds;
     private string gameProcessName = "";
-    private string gameWindowTitle = "";
     private string status;
     private D3D11Host? graphics;
     private HudRuntime? hud;
@@ -221,15 +220,11 @@ internal sealed class OverlayHost : IDisposable
     {
         var configuredProcessName =
             Path.GetFileNameWithoutExtension(config.GameProcessName.Trim()) ?? "";
-        if (
-            !gameProcessName.Equals(configuredProcessName, StringComparison.OrdinalIgnoreCase)
-            || !gameWindowTitle.Equals(config.WindowTitle, StringComparison.Ordinal)
-        )
+        if (!gameProcessName.Equals(configuredProcessName, StringComparison.OrdinalIgnoreCase))
         {
             gameWindow = 0;
             gameProcessId = 0;
             gameProcessName = configuredProcessName;
-            gameWindowTitle = config.WindowTitle;
             nextGameWindowSearch = 0;
         }
         if (
@@ -261,8 +256,6 @@ internal sealed class OverlayHost : IDisposable
 
         nint found = 0;
         uint foundProcessId = 0;
-        var titleFilter = config.WindowTitle.Trim();
-        var text = titleFilter.Length == 0 ? null : new char[512];
         NativeMethods.EnumWindows(
             (candidate, _) =>
             {
@@ -273,18 +266,6 @@ internal sealed class OverlayHost : IDisposable
                     || !processIds.Contains(processId)
                 )
                     return true;
-                if (text is not null)
-                {
-                    var len = NativeMethods.GetWindowText(candidate, text, text.Length);
-                    if (
-                        len <= 0
-                        || !new string(text, 0, len).Contains(
-                            titleFilter,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
-                        return true;
-                }
                 found = candidate;
                 foundProcessId = processId;
                 return false;

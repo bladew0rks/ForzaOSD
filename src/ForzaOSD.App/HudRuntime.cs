@@ -309,9 +309,6 @@ internal sealed unsafe class HudRuntime : IDisposable
         var processName = config.GameProcessName;
         if (ImGui.InputText("Game process", ref processName, 128))
             config.GameProcessName = processName;
-        var title = config.WindowTitle;
-        if (ImGui.InputText("Window title contains (optional)", ref title, 128))
-            config.WindowTitle = title;
         var foreground = config.ShowOnlyWhenForeground;
         if (ImGui.Checkbox("Only show over foreground game", ref foreground))
             config.ShowOnlyWhenForeground = foreground;

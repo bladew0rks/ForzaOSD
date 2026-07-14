@@ -45,7 +45,7 @@ public sealed class ConfigTests
         {
             File.WriteAllText(path, "{\"version\":4,\"hotkey_vk\":121}");
             var loaded = AppConfig.Load(path).Config;
-            Assert.Equal(10, loaded.Version);
+            Assert.Equal(11, loaded.Version);
             Assert.Equal(0x1B, loaded.HotkeyVk);
             Assert.Equal(4, loaded.HotkeyModifiers);
         }

@@ -6,7 +6,7 @@ namespace ForzaOSD.Core;
 
 public sealed class AppConfig
 {
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     [JsonPropertyName("version")]
     public int Version { get; set; } = CurrentVersion;
@@ -16,9 +16,6 @@ public sealed class AppConfig
 
     [JsonPropertyName("udp_port")]
     public ushort UdpPort { get; set; } = 5300;
-
-    [JsonPropertyName("window_title")]
-    public string WindowTitle { get; set; } = "Forza Horizon 6";
 
     [JsonPropertyName("process_name")]
     public string GameProcessName { get; set; } = "forzahorizon6";
@@ -131,7 +128,6 @@ public sealed class AppConfig
             UdpPort = 1;
         var processName = Path.GetFileNameWithoutExtension(GameProcessName?.Trim()) ?? "";
         GameProcessName = string.IsNullOrEmpty(processName) ? "forzahorizon6" : processName;
-        WindowTitle ??= "";
         Layout.X = Math.Clamp(Layout.X, 0, 1);
         Layout.Y = Math.Clamp(Layout.Y, 0, 1);
         Layout.Scale = Math.Clamp(Layout.Scale, .5f, 3);
